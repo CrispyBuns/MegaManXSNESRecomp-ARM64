@@ -92,7 +92,7 @@ jobs:
                   )
               print(f"Detected Mega Man {game}: {found[0]}")
               with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
-                  env.write(f"{game}_ROM_REL={found[0]}\\n")
+                  env.write(f"{game}_ROM_REL={found[0]}" + chr(10))
           PY
 
       - name: Install ARM64 build dependencies
