@@ -65,7 +65,7 @@ jobs:
             --sdl SDL2 --fresh --jobs 4 \
             --build-dir build-rg35xxh \
             -- \
-            -DSNESRECOMP_SDL_GLES_ONLY=ON \
+            -DSNESRECOMP_SDL_GLES2_ONLY=ON \
             -DCMAKE_C_FLAGS_RELEASE="-O3 -mcpu=cortex-a53 -flto -fno-math-errno" \
             -DCMAKE_CXX_FLAGS_RELEASE="-O3 -mcpu=cortex-a53 -flto -fno-math-errno" \
             -DCMAKE_EXE_LINKER_FLAGS_RELEASE="-flto" \
