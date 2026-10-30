@@ -23,6 +23,7 @@ jobs:
           repository: ${{ secrets.ROM_REPO }}
           token: ${{ secrets.ROM_TOKEN }}
           path: private-roms
+          lfs: true
           persist-credentials: false
 
       - name: Validate X1 ROM input
@@ -45,50 +46,53 @@ jobs:
 
           root = Path("private-roms")
           expected = {
-              "X2": {
-                  "sha256": "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed",
-                  "sizes": {1_048_576, 1_049_088},
-              },
-              "X3": {
-                  "sha256": "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7",
-                  "sizes": {2_097_152, 2_097_664},
-              },
+              "X2": "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed",
+              "X3": "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7",
           }
-          matches = {"X2": [], "X3": []}
+          matches = {game: [] for game in expected}
+          diagnostics = []
 
           for path in root.rglob("*"):
               if ".git" in path.parts or not path.is_file() or path.is_symlink():
                   continue
               try:
                   size = path.stat().st_size
-                  for game, spec in expected.items():
-                      if size not in spec["sizes"]:
-                          continue
-                      data = path.read_bytes()
-                      # Accept normal headerless dumps and 512-byte SMC copier headers.
-                      candidates = [data]
-                      if len(data) % 1024 == 512:
-                          candidates.append(data[512:])
-                      if any(hashlib.sha256(candidate).hexdigest() == spec["sha256"]
-                             for candidate in candidates):
-                          matches[game].append(path.relative_to(root).as_posix())
+                  # SNES images are small; skip metadata and unrelated large assets.
+                  if size < 512 or size > 8 * 1024 * 1024:
+                      continue
+                  data = path.read_bytes()
+                  raw_hash = hashlib.sha256(data).hexdigest()
+                  stripped_hash = (
+                      hashlib.sha256(data[512:]).hexdigest()
+                      if size > 512 else ""
+                  )
+                  rel = path.relative_to(root).as_posix()
+                  diagnostics.append((rel, size, raw_hash, stripped_hash))
+                  for game, wanted in expected.items():
+                      # Check the exact file and a possible 512-byte copier-header removal.
+                      if raw_hash == wanted or stripped_hash == wanted:
+                          matches[game].append(rel)
               except OSError as exc:
                   raise SystemExit(f"::error::Could not inspect {path}: {exc}")
 
           for game, found in matches.items():
               if len(found) != 1:
                   if not found:
+                      print(f"::error::Could not identify Mega Man {game} by SHA-256.")
+                      print("Candidate files inspected (path | size | raw SHA-256 | SHA-256 after 512-byte strip):")
+                      for rel, size, raw_hash, stripped_hash in diagnostics:
+                          print(f"  {rel} | {size} | {raw_hash} | {stripped_hash}")
                       raise SystemExit(
-                          f"::error::Could not identify Mega Man {game} ROM by SHA-256. "
-                          "Add the verified USA ROM to the private ROM repository."
+                          f"Add the correct ROM to the private repository. "
+                          f"Expected checksum: {expected[game]}"
                       )
                   raise SystemExit(
                       f"::error::Found multiple matching Mega Man {game} ROMs: {found}. "
-                      "Keep exactly one copy in the private ROM repository."
+                      "Keep exactly one matching copy in the private ROM repository."
                   )
               print(f"Detected Mega Man {game}: {found[0]}")
               with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
-                  env.write(f"{game}_ROM_REL={found[0]}\n")
+                  env.write(f"{game}_ROM_REL={found[0]}\\n")
           PY
 
       - name: Install ARM64 build dependencies
