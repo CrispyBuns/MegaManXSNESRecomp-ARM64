@@ -25,19 +25,71 @@ jobs:
           path: private-roms
           persist-credentials: false
 
-      - name: Validate ROM inputs
+      - name: Validate X1 ROM input
         shell: bash
         run: |
           set -euo pipefail
-          for rom in \
-            "Mega Man X (USA) (Rev 1).sfc" \
-            "Mega Man X 2 (USA).sfc" \
-            "Mega Man X 3 (USA).sfc"; do
-            test -s "private-roms/$rom" || {
-              echo "::error::Missing private ROM file: $rom"
-              exit 1
-            }
-          done
+          test -s "private-roms/Mega Man X (USA) (Rev 1).sfc" || {
+            echo "::error::Missing X1 ROM: Mega Man X (USA) (Rev 1).sfc"
+            exit 1
+          }
+
+      - name: Detect X2 and X3 donor ROMs by content
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          root = Path("private-roms")
+          expected = {
+              "X2": {
+                  "sha256": "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed",
+                  "sizes": {1_048_576, 1_049_088},
+              },
+              "X3": {
+                  "sha256": "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7",
+                  "sizes": {2_097_152, 2_097_664},
+              },
+          }
+          matches = {"X2": [], "X3": []}
+
+          for path in root.rglob("*"):
+              if not path.is_file() or path.is_symlink():
+                  continue
+              try:
+                  size = path.stat().st_size
+                  for game, spec in expected.items():
+                      if size not in spec["sizes"]:
+                          continue
+                      data = path.read_bytes()
+                      # Accept normal headerless dumps and 512-byte SMC copier headers.
+                      candidates = [data]
+                      if len(data) % 1024 == 512:
+                          candidates.append(data[512:])
+                      if any(hashlib.sha256(candidate).hexdigest() == spec["sha256"]
+                             for candidate in candidates):
+                          matches[game].append(path.relative_to(root).as_posix())
+              except OSError as exc:
+                  raise SystemExit(f"::error::Could not inspect {path}: {exc}")
+
+          for game, found in matches.items():
+              if len(found) != 1:
+                  if not found:
+                      raise SystemExit(
+                          f"::error::Could not identify Mega Man {game} ROM by SHA-256. "
+                          "Add the verified USA ROM to the private ROM repository."
+                      )
+                  raise SystemExit(
+                      f"::error::Found multiple matching Mega Man {game} ROMs: {found}. "
+                      "Keep exactly one copy in the private ROM repository."
+                  )
+              print(f"Detected Mega Man {game}: {found[0]}")
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+                  env.write(f"{game}_ROM_REL={found[0]}\\n")
+          PY
 
       - name: Install ARM64 build dependencies
         run: |
@@ -84,8 +136,9 @@ jobs:
 
           # All three game ROMs live in the install's roms/ directory.
           install -m 644 "private-roms/Mega Man X (USA) (Rev 1).sfc" "$PKG/roms/"
-          install -m 644 "private-roms/Mega Man X 2 (USA).sfc" "$PKG/roms/"
-          install -m 644 "private-roms/Mega Man X 3 (USA).sfc" "$PKG/roms/"
+          # Preserve each detected donor ROM's original relative path and filename.
+          install -D -m 644 "private-roms/$X2_ROM_REL" "$PKG/roms/$X2_ROM_REL"
+          install -D -m 644 "private-roms/$X3_ROM_REL" "$PKG/roms/$X3_ROM_REL"
 
           # Ship the project's external runtime art/audio assets under roms/assets.
           if [ -d assets ]; then
@@ -101,19 +154,28 @@ jobs:
           mkdir -p "$PKG/mods/preloaded"
           cp -a build-rg35xxh/mods/preloaded/packages "$PKG/mods/preloaded/"
 
-          # Preselect the private X2/X3 donor ROMs for the mod resource pickers.
-          # X3 is shared by Zero, co-op and X3 weapons; X2 feeds X2 weapons.
-          cat > "$PKG/mods/preloaded/state.toml" <<'STATE'
-          format_version = 1
+          # Preselect the content-identified X2/X3 donor ROMs for the mod pickers.
+          # JSON string escaping is compatible with TOML basic strings.
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-          [[shared_resource]]
-          id = "megaman-x.source.x2"
-          path = "roms/Mega Man X 2 (USA).sfc"
-
-          [[shared_resource]]
-          id = "megaman-x.source.x3"
-          path = "roms/Mega Man X 3 (USA).sfc"
-          STATE
+          x2 = "roms/" + os.environ["X2_ROM_REL"]
+          x3 = "roms/" + os.environ["X3_ROM_REL"]
+          state = (
+              "format_version = 1\\n\\n"
+              "[[shared_resource]]\\n"
+              'id = "megaman-x.source.x2"\\n'
+              f"path = {json.dumps(x2)}\\n\\n"
+              "[[shared_resource]]\\n"
+              'id = "megaman-x.source.x3"\\n'
+              f"path = {json.dumps(x3)}\\n"
+          )
+          Path("dist/MegaManXSNESRecomp/mods/preloaded/state.toml").write_text(
+              state, encoding="utf-8"
+          )
+          PY
 
           # The game/recompiler expects the verified X1 image at mmx.sfc.
           ln -s "roms/Mega Man X (USA) (Rev 1).sfc" "$PKG/mmx.sfc"
