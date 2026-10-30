@@ -52,7 +52,7 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Patch SDL2 to require OpenGL ES 2
+      - name: Verify SDL2 GLES2 framework path
         run: |
           bash tools/enable-sdl-opengles2.sh
 
