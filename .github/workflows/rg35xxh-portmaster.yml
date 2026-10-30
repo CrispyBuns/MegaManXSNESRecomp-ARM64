@@ -95,47 +95,80 @@ jobs:
           # The game/recompiler expects the verified X1 image at mmx.sfc.
           ln -s "roms/Mega Man X (USA) (Rev 1).sfc" "$PKG/mmx.sfc"
 
+          # Runtime looks for project art relative to the application directory.
+          ln -s "roms/assets" "$PKG/assets"
+
           cat > "$PKG/MegaManXSNESRecomp.sh" <<'LAUNCHER'
           #!/bin/bash
           set -euo pipefail
+
+          export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+          if [ -d "/opt/system/Tools/PortMaster" ]; then
+              controlfolder="/opt/system/Tools/PortMaster"
+          elif [ -d "/opt/tools/PortMaster" ]; then
+              controlfolder="/opt/tools/PortMaster"
+          elif [ -d "$XDG_DATA_HOME/PortMaster" ]; then
+              controlfolder="$XDG_DATA_HOME/PortMaster"
+          else
+              controlfolder="/roms/ports/PortMaster"
+          fi
+
+          if [ ! -r "$controlfolder/control.txt" ]; then
+              echo "PortMaster control.txt not found: $controlfolder/control.txt" >&2
+              exit 1
+          fi
+          source "$controlfolder/control.txt"
+          if [ -f "$controlfolder/mod_${CFW_NAME}.txt" ]; then
+              source "$controlfolder/mod_${CFW_NAME}.txt"
+          fi
+          get_controls
+
           GAMEDIR="$(cd "$(dirname "$0")" && pwd)"
-          cd "$GAMEDIR"
+          GAME="$GAMEDIR/MegaManXSNESRecomp"
+          LOGFILE="$GAMEDIR/log.txt"
           mkdir -p "$GAMEDIR/userdata"
-          export HOME="$GAMEDIR/userdata"
-          export XDG_CONFIG_HOME="$GAMEDIR/userdata"
+          cd "$GAMEDIR"
+
+          if [ -d "$GAMEDIR/libs" ]; then
+              export LD_LIBRARY_PATH="$GAMEDIR/libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
           export SDL_RENDER_DRIVER=opengles2
-          export LD_LIBRARY_PATH="$GAMEDIR/libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          LOG="$GAMEDIR/log.txt"
-          echo "[launcher] Mega Man X Recompiled starting on $(uname -m)" > "$LOG"
-          echo "[launcher] SDL renderer requested: opengles2" >> "$LOG"
-          exec "$GAMEDIR/MegaManXSNESRecomp" >> "$LOG" 2>&1
+
+          GPTOKEYB_PID=""
+          finish_portmaster() {
+              if [ -n "$GPTOKEYB_PID" ]; then
+                  kill "$GPTOKEYB_PID" 2>/dev/null || true
+                  wait "$GPTOKEYB_PID" 2>/dev/null || true
+              fi
+              pm_finish
+          }
+          trap finish_portmaster EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          if [ ! -x "$GAME" ]; then
+              pm_show_error "Mega Man X Recompiled executable is missing. Reinstall the port."
+              exit 1
+          fi
+
+          pm_platform_helper "$GAME" >/dev/null 2>&1 || true
+          echo "[launcher] Mega Man X Recompiled starting on $(uname -m)" > "$LOGFILE"
+          echo "[launcher] SDL renderer requested: opengles2" >> "$LOGFILE"
+          "$GAME" >> "$LOGFILE" 2>&1
+          GAME_STATUS=$?
+          exit "$GAME_STATUS"
           LAUNCHER
           chmod 755 "$PKG/MegaManXSNESRecomp.sh"
 
           cat > "$PKG/README.txt" <<'README'
           Mega Man X Recompiled - RG35XX-H / KNULLI
-          Copy the MegaManXSNESRecomp folder into /roms/ports/.
+          Install the MegaManXSNESRecomp folder under /roms/ports/.
           Launch MegaManXSNESRecomp.sh from PortMaster.
-          ROMs are in roms/ and project assets are in roms/assets/.
-          The build requests SDL2's OpenGL ES 2 renderer and does not use GL4ES
-          or directly link the desktop OpenGL/KMS/DRM presenter.
+          The three ROMs are in roms/ and project assets are in roms/assets/.
+          SDL2 is configured to request OpenGL ES 2. This build does not use
+          GL4ES or the desktop OpenGL/KMS/DRM presenter.
           README
-
-          # Include an explicit package manifest for the install archive.
-          cat > "$PKG/port.json" <<'PORT'
-          {
-            "version": 1,
-            "name": "Mega Man X Recompiled",
-            "items": [
-              "MegaManXSNESRecomp.sh",
-              "MegaManXSNESRecomp",
-              "config.ini",
-              "logging.ini",
-              "roms/",
-              "userdata/"
-            ]
-          }
-          PORT
 
           cd dist
           zip -qr MegaManXSNESRecomp-RG35XX-H-PortMaster.zip MegaManXSNESRecomp
