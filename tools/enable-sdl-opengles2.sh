@@ -18,6 +18,10 @@ host_path, cmake_path = map(Path, sys.argv[1:])
 host = host_path.read_text()
 cmake = cmake_path.read_text()
 
+if "requested opengles2" in host and "SNESRECOMP_SDL_GLES_ONLY" in cmake:
+    print("SDL GLES2 host patch is already applied.")
+    raise SystemExit(0)
+
 def once(source, old, new, label):
     count = source.count(old)
     if count != 1:
@@ -82,9 +86,6 @@ host = once(
     "SDL renderer runtime verification"
 )
 
-host_path.write_text(host)
-print(f"Patched {host_path}")
-
 # Add an opt-in GLES-only mode that omits the desktop GL 3.1 presenter and
 # defines the matching host-side guards.
 cmake = once(
@@ -114,7 +115,9 @@ cmake = once(
     "desktop OpenGL presenter condition"
 )
 
+host_path.write_text(host)
 cmake_path.write_text(cmake)
+print(f"Patched {host_path}")
 print(f"Patched {cmake_path}")
 PY
 
