@@ -244,29 +244,27 @@ jobs:
           pm_platform_helper "$GAME" >/dev/null 2>&1 || true
           echo "[launcher] Mega Man X Recompiled starting on $(uname -m)" > "$LOGFILE"
           echo "[launcher] SDL renderer requested: opengles2" >> "$LOGFILE"
+          set +e
           "$GAME" >> "$LOGFILE" 2>&1
           GAME_STATUS=$?
+          set -e
+          echo "[launcher] Game exited with status $GAME_STATUS" >> "$LOGFILE"
           exit "$GAME_STATUS"
           LAUNCHER
           chmod 755 "$PKG/MegaManXSNESRecomp.sh"
-          # Provide the conventional PortMaster boot entry point as well.
-          cp "$PKG/MegaManXSNESRecomp.sh" "$PKG/boot.sh"
-          chmod 755 "$PKG/boot.sh"
-
           # Fail the build if either detected donor ROM or either launcher is absent.
           test -s "$PKG/roms/$X2_ROM_REL"
           test -s "$PKG/roms/$X3_ROM_REL"
           test -x "$PKG/MegaManXSNESRecomp.sh"
-          test -x "$PKG/boot.sh"
           echo "Packaged donor ROMs:"
           printf '  X2: %s\\n  X3: %s\\n' "$PKG/roms/$X2_ROM_REL" "$PKG/roms/$X3_ROM_REL"
           echo "Packaged launchers:"
-          ls -l "$PKG/MegaManXSNESRecomp.sh" "$PKG/boot.sh"
+          ls -l "$PKG/MegaManXSNESRecomp.sh"
 
           cat > "$PKG/README.txt" <<'README'
           Mega Man X Recompiled - RG35XX-H / KNULLI
           Install the MegaManXSNESRecomp folder under /roms/ports/.
-          Launch boot.sh or MegaManXSNESRecomp.sh from PortMaster.
+          Launch MegaManXSNESRecomp.sh from PortMaster.
           The three ROMs are in roms/ and project assets are in roms/assets/.
           X2 and X3 are preselected as donor ROMs for the corresponding Mods
           source pickers; enable the desired X2/X3 weapon features in Mods.
