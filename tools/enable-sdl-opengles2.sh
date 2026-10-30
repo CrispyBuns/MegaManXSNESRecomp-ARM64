@@ -32,6 +32,16 @@ host = host.replace(
 
 host = once(
     host,
+    """static const char *RendererPretty(const char *id) {
+  if (!strcmp(id, "direct3d"))   return "Direct3D 9";""",
+    """static const char *RendererPretty(const char *id) {
+  if (!strcmp(id, "opengles2")) return "OpenGL ES 2";
+  if (!strcmp(id, "direct3d"))   return "Direct3D 9";""",
+    "OpenGL ES renderer display label"
+)
+
+host = once(
+    host,
     """    /* opengles2 reaches the same hardware as OpenGL through a smaller API;
      * SDL's opengl driver is the native presenter's twin. Neither is a
      * choice a player should be offered. */
