@@ -18,8 +18,8 @@ host_path, cmake_path = map(Path, sys.argv[1:])
 host = host_path.read_text()
 cmake = cmake_path.read_text()
 
-if "requested opengles2" in host and "SNESRECOMP_SDL_GLES_ONLY" in cmake:
-    print("SDL GLES2 host patch is already applied.")
+if "snesrecomp_sdl_create_renderer_named" in host and "SNESRECOMP_SDL_GLES2_ONLY" in cmake:
+    print("SDL2 GLES2-only mode is implemented by the snesrecomp submodule; no patch needed.")
     raise SystemExit(0)
 
 def once(source, old, new, label):
