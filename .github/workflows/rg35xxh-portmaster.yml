@@ -92,6 +92,29 @@ jobs:
             cp -a assets/. "$PKG/roms/assets/"
           fi
 
+          # Stage the project's actual preloaded mod catalog beside the executable.
+          # The launcher reads it from mods/preloaded/packages.
+          test -d build-rg35xxh/mods/preloaded/packages || {
+            echo "::error::Build did not stage the mod catalog"
+            exit 1
+          }
+          mkdir -p "$PKG/mods/preloaded"
+          cp -a build-rg35xxh/mods/preloaded/packages "$PKG/mods/preloaded/"
+
+          # Preselect the private X2/X3 donor ROMs for the mod resource pickers.
+          # X3 is shared by Zero, co-op and X3 weapons; X2 feeds X2 weapons.
+          cat > "$PKG/mods/preloaded/state.toml" <<'STATE'
+          format_version = 1
+
+          [[shared_resource]]
+          id = "megaman-x.source.x2"
+          path = "roms/Mega Man X 2 (USA).sfc"
+
+          [[shared_resource]]
+          id = "megaman-x.source.x3"
+          path = "roms/Mega Man X 3 (USA).sfc"
+          STATE
+
           # The game/recompiler expects the verified X1 image at mmx.sfc.
           ln -s "roms/Mega Man X (USA) (Rev 1).sfc" "$PKG/mmx.sfc"
 
@@ -166,6 +189,9 @@ jobs:
           Install the MegaManXSNESRecomp folder under /roms/ports/.
           Launch MegaManXSNESRecomp.sh from PortMaster.
           The three ROMs are in roms/ and project assets are in roms/assets/.
+          X2 and X3 are preselected as donor ROMs for the corresponding Mods
+          source pickers; enable the desired X2/X3 weapon features in Mods.
+          X3 is shared by Zero, co-op and X3 weapons.
           SDL2 is configured to request OpenGL ES 2. This build does not use
           GL4ES or the desktop OpenGL/KMS/DRM presenter.
           README
