@@ -57,7 +57,7 @@ jobs:
           matches = {"X2": [], "X3": []}
 
           for path in root.rglob("*"):
-              if not path.is_file() or path.is_symlink():
+              if ".git" in path.parts or not path.is_file() or path.is_symlink():
                   continue
               try:
                   size = path.stat().st_size
@@ -88,7 +88,7 @@ jobs:
                   )
               print(f"Detected Mega Man {game}: {found[0]}")
               with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
-                  env.write(f"{game}_ROM_REL={found[0]}\\n")
+                  env.write(f"{game}_ROM_REL={found[0]}\n")
           PY
 
       - name: Install ARM64 build dependencies
@@ -134,7 +134,7 @@ jobs:
           install -m 644 config.ini "$PKG/config.ini"
           install -m 644 logging.ini "$PKG/logging.ini"
 
-          # All three game ROMs live in the install's roms/ directory.
+          # X1 lives in roms/; detected X2/X3 donor paths are preserved under roms/.
           install -m 644 "private-roms/Mega Man X (USA) (Rev 1).sfc" "$PKG/roms/"
           # Preserve each detected donor ROM's original relative path and filename.
           install -D -m 644 "private-roms/$X2_ROM_REL" "$PKG/roms/$X2_ROM_REL"
@@ -164,13 +164,13 @@ jobs:
           x2 = "roms/" + os.environ["X2_ROM_REL"]
           x3 = "roms/" + os.environ["X3_ROM_REL"]
           state = (
-              "format_version = 1\\n\\n"
-              "[[shared_resource]]\\n"
-              'id = "megaman-x.source.x2"\\n'
-              f"path = {json.dumps(x2)}\\n\\n"
-              "[[shared_resource]]\\n"
-              'id = "megaman-x.source.x3"\\n'
-              f"path = {json.dumps(x3)}\\n"
+              "format_version = 1\n\n"
+              "[[shared_resource]]\n"
+              'id = "megaman-x.source.x2"\n'
+              f"path = {json.dumps(x2)}\n\n"
+              "[[shared_resource]]\n"
+              'id = "megaman-x.source.x3"\n'
+              f"path = {json.dumps(x3)}\n"
           )
           Path("dist/MegaManXSNESRecomp/mods/preloaded/state.toml").write_text(
               state, encoding="utf-8"
