@@ -17,6 +17,13 @@ jobs:
           ref: sdl-opengles2
           submodules: recursive
 
+      - name: Validate shell script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/build-linux-dev.sh
+          bash -n tools/enable-sdl-opengles2.sh
+
       - name: Check out private ROM repository
         uses: actions/checkout@v6
         with:
