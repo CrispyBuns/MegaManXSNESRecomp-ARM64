@@ -141,13 +141,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PROFILE_DIR="PGO/debug/pgo"
+          PROFILE_DIR="pgo"
           if [ ! -d "$PROFILE_DIR" ]; then
-            echo "::error::PGO Use requires profile files in PGO/debug/pgo/ in this repository."
+            echo "::error::PGO Use requires profile files in pgo/ in this repository."
             exit 1
           fi
           if ! find "$PROFILE_DIR" -type f -name '*.gcda' -print -quit | grep -q .; then
-            echo "::error::No .gcda profile data found in PGO/debug/pgo/."
+            echo "::error::No .gcda profile data found in pgo/."
             exit 1
           fi
           echo "Found GCC profile data:"
@@ -160,8 +160,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          C_FLAGS="-O3 -mcpu=cortex-a53 -flto -fno-math-errno"
-          CXX_FLAGS="-O3 -mcpu=cortex-a53 -flto -fno-math-errno"
+          C_FLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          CXX_FLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
           LINK_FLAGS="-flto"
           case "$BUILD_MODE" in
             release)
@@ -169,15 +169,15 @@ jobs:
               ;;
             pgo-gen)
               echo "Building instrumented PGO profile-generation executable."
-              C_FLAGS="$C_FLAGS -fprofile-generate=debug/pgo"
-              CXX_FLAGS="$CXX_FLAGS -fprofile-generate=debug/pgo"
-              LINK_FLAGS="$LINK_FLAGS -fprofile-generate=debug/pgo"
+              C_FLAGS="$C_FLAGS -fprofile-generate=pgo"
+              CXX_FLAGS="$CXX_FLAGS -fprofile-generate=pgo"
+              LINK_FLAGS="$LINK_FLAGS -fprofile-generate=pgo"
               ;;
             pgo-use)
               echo "Building with collected PGO profiles."
-              C_FLAGS="$C_FLAGS -fprofile-use=PGO/debug/pgo -fprofile-correction"
-              CXX_FLAGS="$CXX_FLAGS -fprofile-use=PGO/debug/pgo -fprofile-correction"
-              LINK_FLAGS="$LINK_FLAGS -fprofile-use=PGO/debug/pgo -fprofile-correction"
+              C_FLAGS="$C_FLAGS -fprofile-use=pgo -fprofile-correction"
+              CXX_FLAGS="$CXX_FLAGS -fprofile-use=pgo -fprofile-correction"
+              LINK_FLAGS="$LINK_FLAGS -fprofile-use=pgo -fprofile-correction"
               ;;
             *)
               echo "::error::Unknown build_mode: $BUILD_MODE"
