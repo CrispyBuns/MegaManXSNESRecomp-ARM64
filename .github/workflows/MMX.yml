@@ -1,0 +1,241 @@
+name: RG35XX-H PortMaster auto-install
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: "Build type"
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - pgo-gen
+          - pgo-use
+
+permissions:
+  contents: read
+
+jobs:
+  build-rg35xxh:
+    # Native ARM64 build: no cross-compiler ABI surprises.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@v6
+        with:
+          ref: sdl-opengles2
+          submodules: recursive
+
+      - name: Validate shell script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/build-linux-dev.sh
+          bash -n tools/enable-sdl-opengles2.sh
+
+      - name: Check out PortMaster package files
+        uses: actions/checkout@v6
+        with:
+          repository: CrispyBuns/RHH-Ports
+          ref: main
+          path: port-files
+
+      - name: Check out private ROM repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ secrets.ROM_REPO }}
+          token: ${{ secrets.ROM_TOKEN }}
+          path: private-roms
+          lfs: true
+          persist-credentials: false
+
+      - name: Validate X1 ROM input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "private-roms/Mega Man X (USA) (Rev 1).sfc" || {
+            echo "::error::Missing X1 ROM: Mega Man X (USA) (Rev 1).sfc"
+            exit 1
+          }
+
+      - name: Detect X2 and X3 donor ROMs by content
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          root = Path("private-roms")
+          expected = {
+              "X2": "f3246755f608a1e1dc9c848b61da3b824c7853b29b3be40df6fc7f2793a887ed",
+              "X3": "65b03268afac296330e8ff8d60dd0825879e13ed658b37713c034a3bd074f1d7",
+          }
+          matches = {game: [] for game in expected}
+          diagnostics = []
+
+          for path in root.rglob("*"):
+              if ".git" in path.parts or not path.is_file() or path.is_symlink():
+                  continue
+              try:
+                  size = path.stat().st_size
+                  # SNES images are small; skip metadata and unrelated large assets.
+                  if size < 512 or size > 8 * 1024 * 1024:
+                      continue
+                  data = path.read_bytes()
+                  raw_hash = hashlib.sha256(data).hexdigest()
+                  stripped_hash = (
+                      hashlib.sha256(data[512:]).hexdigest()
+                      if size > 512 else ""
+                  )
+                  rel = path.relative_to(root).as_posix()
+                  diagnostics.append((rel, size, raw_hash, stripped_hash))
+                  for game, wanted in expected.items():
+                      # Check the exact file and a possible 512-byte copier-header removal.
+                      if raw_hash == wanted or stripped_hash == wanted:
+                          matches[game].append(rel)
+              except OSError as exc:
+                  raise SystemExit(f"::error::Could not inspect {path}: {exc}")
+
+          for game, found in matches.items():
+              if len(found) != 1:
+                  if not found:
+                      print(f"::error::Could not identify Mega Man {game} by SHA-256.")
+                      print("Candidate files inspected (path | size | raw SHA-256 | SHA-256 after 512-byte strip):")
+                      for rel, size, raw_hash, stripped_hash in diagnostics:
+                          print(f"  {rel} | {size} | {raw_hash} | {stripped_hash}")
+                      raise SystemExit(
+                          f"Add the correct ROM to the private repository. "
+                          f"Expected checksum: {expected[game]}"
+                      )
+                  raise SystemExit(
+                      f"::error::Found multiple matching Mega Man {game} ROMs: {found}. "
+                      "Keep exactly one matching copy in the private ROM repository."
+                  )
+              print(f"Detected Mega Man {game}: {found[0]}")
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+                  env.write(f"{game}_ROM_REL={found[0]}" + chr(10))
+          PY
+
+      - name: Install ARM64 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build git pkg-config \
+            python3 python3-pip python3-pil \
+            libsdl2-dev libegl1-mesa-dev libgles2-mesa-dev
+
+      - name: Install Rust analyzer toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Verify SDL2 GLES2 framework path
+        run: |
+          bash tools/enable-sdl-opengles2.sh
+
+      - name: Validate PGO profile files
+        if: inputs.build_mode == 'pgo-use'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE_DIR="pgo"
+          if [ ! -d "$PROFILE_DIR" ]; then
+            echo "::error::PGO Use requires profile files in pgo/ in this repository."
+            exit 1
+          fi
+          if ! find "$PROFILE_DIR" -type f -name '*.gcda' -print -quit | grep -q .; then
+            echo "::error::No .gcda profile data found in pgo/."
+            exit 1
+          fi
+          echo "Found GCC profile data:"
+          find "$PROFILE_DIR" -type f -name '*.gcda' -print
+
+      - name: Build ARM64 Cortex-A53 executable
+        env:
+          SNESRECOMP_ANALYSIS_BACKEND: native
+          BUILD_MODE: ${{ inputs.build_mode }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          C_FLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          CXX_FLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          LINK_FLAGS="-flto"
+          case "$BUILD_MODE" in
+            release)
+              echo "Building standard optimized release."
+              ;;
+            pgo-gen)
+              echo "Building instrumented PGO profile-generation executable."
+              C_FLAGS="$C_FLAGS -fprofile-generate=pgo"
+              CXX_FLAGS="$CXX_FLAGS -fprofile-generate=pgo"
+              LINK_FLAGS="$LINK_FLAGS -fprofile-generate=pgo"
+              ;;
+            pgo-use)
+              echo "Building with collected PGO profiles."
+              C_FLAGS="$C_FLAGS -fprofile-use=pgo -fprofile-correction"
+              CXX_FLAGS="$CXX_FLAGS -fprofile-use=pgo -fprofile-correction"
+              LINK_FLAGS="$LINK_FLAGS -fprofile-use=pgo -fprofile-correction"
+              ;;
+            *)
+              echo "::error::Unknown build_mode: $BUILD_MODE"
+              exit 1
+              ;;
+          esac
+
+          bash tools/build-linux-dev.sh \
+            --rom "private-roms/Mega Man X (USA) (Rev 1).sfc" \
+            --sdl SDL2 --fresh --jobs 4 \
+            --build-dir build-rg35xxh \
+            -- \
+            -DSNESRECOMP_SDL_GLES2_ONLY=ON \
+            -DMMX_RASTER_IMPL=NATIVE \
+            -DMMX_NATIVE_ROW_PLAN=ON \
+            "-DCMAKE_C_FLAGS_RELEASE=$C_FLAGS" \
+            "-DCMAKE_CXX_FLAGS_RELEASE=$CXX_FLAGS" \
+            "-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$LINK_FLAGS" \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
+
+      - name: Verify GLES2-only executable (reject desktop OpenGL)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="build-rg35xxh/MegaManXSNESRecomp"
+          CACHE="build-rg35xxh/CMakeCache.txt"
+
+          grep -Fxq 'SNESRECOMP_SDL_GLES2_ONLY:BOOL=ON' "$CACHE" || {
+            echo "::error::CMake did not enable strict SDL2/GLES2-only mode"
+            exit 1
+          }
+          grep -Fxq 'MMX_RASTER_IMPL:STRING=NATIVE' "$CACHE" || {
+            echo "::error::Native raster implementation was not enabled"
+            exit 1
+          }
+          grep -Fxq 'MMX_NATIVE_ROW_PLAN:BOOL=ON' "$CACHE" || {
+            echo "::error::Native row planning was not enabled"
+            exit 1
+          }
+
+          if readelf -d "$BIN" | grep -E '\(NEEDED\).*\[(lib(OpenGL|GL|GLX|GLU)\.so(\.[0-9]+)?)\]'; then
+            echo "::error::The handheld executable still links desktop OpenGL"
+            exit 1
+          fi
+
+          grep -Fq 'recomp-ui: SDL2 OpenGL ES 2 backend; desktop OpenGL disabled' \
+            build-rg35xxh/configure.log || {
+              echo "::error::recomp-ui did not configure its GLES2 backend"
+              exit 1
+            }
+
+          echo "Verified: strict SDL2 opengles2 host; no desktop GL NEEDED entries."
+          readelf -d "$BIN" | grep NEEDED || true
+
+      - name: Upload executable only
+        uses: actions/upload-artifact@v6
+        with:
+          name: MegaManXSNESRecomp-RG35XX-H-${{ inputs.build_mode }}
+          path: build-rg35xxh/MegaManXSNESRecomp
+          if-no-files-found: error
+          retention-days: 14
