@@ -141,13 +141,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PROFILE_DIR="pgo"
+          PROFILE_DIR="debug/pgo"
           if [ ! -d "$PROFILE_DIR" ]; then
-            echo "::error::PGO Use requires profile files in pgo/ in this repository."
+            echo "::error::PGO Use requires profile files in debug/pgo/ in this repository."
             exit 1
           fi
           if ! find "$PROFILE_DIR" -type f -name '*.gcda' -print -quit | grep -q .; then
-            echo "::error::No .gcda profile data found in pgo/."
+            echo "::error::No .gcda profile data found in debug/pgo/."
             exit 1
           fi
           echo "Found GCC profile data:"
@@ -175,9 +175,9 @@ jobs:
               ;;
             pgo-use)
               echo "Building with collected PGO profiles."
-              C_FLAGS="$C_FLAGS -fprofile-use=pgo -fprofile-correction"
-              CXX_FLAGS="$CXX_FLAGS -fprofile-use=pgo -fprofile-correction"
-              LINK_FLAGS="$LINK_FLAGS -fprofile-use=pgo -fprofile-correction"
+              C_FLAGS="$C_FLAGS -fprofile-use=debug/pgo -fprofile-correction"
+              CXX_FLAGS="$CXX_FLAGS -fprofile-use=debug/pgo -fprofile-correction"
+              LINK_FLAGS="$LINK_FLAGS -fprofile-use=debug/pgo -fprofile-correction"
               ;;
             *)
               echo "::error::Unknown build_mode: $BUILD_MODE"
