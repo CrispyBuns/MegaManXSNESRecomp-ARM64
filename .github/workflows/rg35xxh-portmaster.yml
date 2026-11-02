@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  build-rg35xx-h:
+  build-rg35xxh:
     # Native ARM64 build: no cross-compiler ABI surprises.
     runs-on: ubuntu-24.04-arm
     steps:
@@ -138,8 +138,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BIN="build-rg35xx-h/MegaManXSNESRecomp"
-          CACHE="build-rg35xx-h/CMakeCache.txt"
+          BIN="build-rg35xxh/MegaManXSNESRecomp"
+          CACHE="build-rg35xxh/CMakeCache.txt"
 
           grep -Fxq 'SNESRECOMP_SDL_GLES2_ONLY:BOOL=ON' "$CACHE" || {
             echo "::error::CMake did not enable strict SDL2/GLES2-only mode"
@@ -152,7 +152,7 @@ jobs:
           fi
 
           grep -Fq 'recomp-ui: SDL2 OpenGL ES 2 backend; desktop OpenGL disabled' \
-            build-rg35xx-h/configure.log || {
+            build-rg35xxh/configure.log || {
               echo "::error::recomp-ui did not configure its GLES2 backend"
               exit 1
             }
