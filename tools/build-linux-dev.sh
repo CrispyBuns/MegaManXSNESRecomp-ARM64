@@ -216,7 +216,19 @@ else
     "Install them: sudo apt install lib$(printf '%s' "$SDL_BACKEND" | tr '[:upper:]' '[:lower:]')-dev"
 fi
 info "SDL backend: $SDL_BACKEND"
-if printf '%s\n' "${EXTRA_CMAKE[@]}" | grep -Eq '^-DSNESRECOMP_SDL_GLES2_ONLY(:BOOL)?=(ON|TRUE|1)
+gles2_only=0
+for arg in "${EXTRA_CMAKE[@]}"; do
+  case "$arg" in
+    -DSNESRECOMP_SDL_GLES2_ONLY=ON|-DSNESRECOMP_SDL_GLES2_ONLY:BOOL=ON|-DSNESRECOMP_SDL_GLES2_ONLY=TRUE|-DSNESRECOMP_SDL_GLES2_ONLY=1)
+      gles2_only=1
+      ;;
+  esac
+done
+if [ "$gles2_only" -eq 1 ]; then
+  info "Strict GLES2-only mode: desktop OpenGL development files are not required."
+elif command -v pkg-config >/dev/null && ! pkg-config --exists gl 2>/dev/null; then
+  warn "Desktop OpenGL development files not found by pkg-config (sudo apt install libgl1-mesa-dev)"
+fi
 # -------------------------------------------------------------------- ROM --
 # SHA-256 of the ROM payload. A 512-byte copier header (size 512 past a 1 KiB
 # boundary) is skipped, exactly as the game (rom_image_verify.c) and the
