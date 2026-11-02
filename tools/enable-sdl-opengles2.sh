@@ -25,105 +25,34 @@ rui_sdl = rui_sdl_path.read_text()
 def once(source, old, new, label):
     count = source.count(old)
     if count != 1:
-        raise SystemExit(f"Expected exactly one {label} block, found {count}; refusing a partial patch.")
+        raise SystemExit(
+            f"Expected exactly one {label} block, found {count}; refusing a partial patch."
+        )
     return source.replace(old, new, 1)
 
-# The GLES-only build must not compile or reference the desktop GL 3.1 presenter.
-host = host.replace(
-    "#ifndef __ANDROID__",
-    "#if !defined(__ANDROID__) && !defined(SNESRECOMP_SDL_GLES_ONLY)"
+# The framework owns the actual game presenter. Refuse to continue unless its
+# ARM64 host is already strict GLES2-only and cannot add the desktop GL host.
+required_framework = (
+    "option(SNESRECOMP_SDL_GLES2_ONLY",
+    "if(NOT ANDROID AND NOT SNESRECOMP_SDL_GLES2_ONLY)",
 )
+for marker in required_framework:
+    if marker not in cmake:
+        raise SystemExit(
+            "The snesrecomp submodule is missing its strict SDL2/GLES2-only "
+            "support. Update the snesrecomp submodule to CrispyBuns/snesrecomp "
+            "branch rg35xxh before building."
+        )
+if "#if SNESRECOMP_SDL_GLES2_ONLY" not in host:
+    raise SystemExit("The snesrecomp host does not contain its strict GLES2 renderer path.")
+if "snesrecomp_sdl_create_renderer_named" not in host or \
+   'strcmp(selected_driver, "opengles2")' not in host:
+    raise SystemExit("The snesrecomp host does not enforce SDL's opengles2 renderer at runtime.")
 
-if "if (!strcmp(id, \"opengles2\")) return \"OpenGL ES 2\";" not in host:
-    host = once(
-        host,
-        """static const char *RendererPretty(const char *id) {
-  if (!strcmp(id, "direct3d"))   return "Direct3D 9";""",
-        """static const char *RendererPretty(const char *id) {
-  if (!strcmp(id, "opengles2")) return "OpenGL ES 2";
-  if (!strcmp(id, "direct3d"))   return "Direct3D 9";""",
-        "OpenGL ES renderer display label"
-    )
-
-if "if (!strcmp(id, \"opengl\") || !strcmp(id, \"opengles\"))" not in host:
-    host = once(
-        host,
-        """    /* opengles2 reaches the same hardware as OpenGL through a smaller API;
-     * SDL's opengl driver is the native presenter's twin. Neither is a
-     * choice a player should be offered. */
-    if (!strcmp(id, "opengl") || !strcmp(id, "opengles2") || !strcmp(id, "opengles"))
-      continue;""",
-        """    /* The desktop OpenGL presenter is separate. Keep SDL's GLES2 driver
-     * selectable for embedded Linux targets; opengles (GLES1) is not suitable. */
-    if (!strcmp(id, "opengl") || !strcmp(id, "opengles"))
-      continue;""",
-        "SDL renderer enumeration"
-    )
-
-if "SDL_SetHintWithPriority(SDL_HINT_RENDER_DRIVER, id, SDL_HINT_OVERRIDE);" not in host:
-    host = once(
-        host,
-        "SDL_SetHint(SDL_HINT_RENDER_DRIVER, id);",
-        "SDL_SetHintWithPriority(SDL_HINT_RENDER_DRIVER, id, SDL_HINT_OVERRIDE);",
-        "SDL renderer hint priority"
-    )
-
-if "SDL renderer runtime verification" not in host:
-    host = once(
-        host,
-        """  g_renderer = renderer;
-
-  g_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,""",
-        """  const char *actual_renderer = snesrecomp_sdl_renderer_name(renderer);
-  printf("[video] SDL renderer created: %s\\n",
-         actual_renderer ? actual_renderer : "(unknown)");
-  if (!strcmp(g_config.renderer, "opengles2") &&
-      (!actual_renderer || strcmp(actual_renderer, "opengles2"))) {
-    fprintf(stderr, "[video] ERROR: requested opengles2, but SDL created %s\\n",
-            actual_renderer ? actual_renderer : "(unknown)");
-    SDL_DestroyRenderer(renderer);
-    return false;
-  }
-  g_renderer = renderer;
-
-  g_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,""",
-        "SDL renderer runtime verification"
-    )
-
-# Add an opt-in GLES-only mode if the vendored framework is older than the
-# rg35xxh branch. Newer framework revisions already contain this option.
-if "SNESRECOMP_SDL_GLES_ONLY" not in cmake:
-    cmake = once(
-        cmake,
-        """function(snesrecomp_target_desktop_host target)
-    set(options TIER2)""",
-        """option(SNESRECOMP_SDL_GLES_ONLY
-    "Use SDL's OpenGL ES renderer only; omit the desktop OpenGL 3.1 presenter"
-    OFF)
-
-function(snesrecomp_target_desktop_host target)
-    set(options TIER2)""",
-        "GLES-only CMake option"
-    )
-
-    cmake = once(
-        cmake,
-        """    if(NOT ANDROID)
-        snesrecomp_target_opengl(${target})
-    endif()""",
-        """    if(NOT ANDROID AND NOT SNESRECOMP_SDL_GLES_ONLY)
-        snesrecomp_target_opengl(${target})
-    elseif(SNESRECOMP_SDL_GLES_ONLY)
-        target_compile_definitions(${target} PRIVATE SNESRECOMP_SDL_GLES_ONLY=1)
-        message(STATUS "${target}: SDL GLES-only host; desktop OpenGL presenter disabled")
-    endif()""",
-        "desktop OpenGL presenter condition"
-    )
-
-# Patch recomp-ui's Dear ImGui launcher too. The launcher previously hard-linked
-# OpenGL::GL, which is exactly what produced libOpenGL.so.0 even though the
-# snesrecomp desktop host had already disabled its OpenGL presenter.
-if "SNESRECOMP_SDL_GLES2_ONLY" not in rui_cmake:
+# recomp-ui is a separate build component. Its ImGui OpenGL3 backend must be
+# compiled in GLES2 mode, and its link branch must use GLESv2/EGL rather than
+# recomp_resolve_gl()/OpenGL::GL.
+if "if(ANDROID OR SNESRECOMP_SDL_GLES2_ONLY)" not in rui_cmake:
     rui_cmake = once(
         rui_cmake,
         """    if(ANDROID)
@@ -136,9 +65,10 @@ if "SNESRECOMP_SDL_GLES2_ONLY" not in rui_cmake:
             LNG_GLES2=1
             IMGUI_IMPL_OPENGL_ES2=1)
     endif()""",
-        "recomp-ui GLES2 compile definitions"
+        "recomp-ui GLES2 compile definitions",
     )
 
+if "elseif(SNESRECOMP_SDL_GLES2_ONLY)" not in rui_cmake:
     rui_cmake = once(
         rui_cmake,
         """    if(ANDROID)
@@ -161,37 +91,28 @@ if "SNESRECOMP_SDL_GLES2_ONLY" not in rui_cmake:
             ${RUI_GLES2_LIBRARY} ${RUI_EGL_LIBRARY} ${CMAKE_DL_LIBS})
         message(STATUS "recomp-ui: SDL2 OpenGL ES 2 backend; desktop OpenGL disabled")
     elseif(WIN32)""",
-        "recomp-ui GLES2 link libraries"
+        "recomp-ui GLES2 link libraries",
     )
 
-# SDL2's compatibility header must expose GLES2 headers to both launcher_gl.c
-# and the ImGui SDL2/OpenGL backend. This avoids pulling SDL_opengl.h.
-if "defined(LNG_GLES2)" not in rui_sdl:
+# SDL's compatibility layer supplies the GL header used by ImGui's backend.
+# It must select SDL2 GLES2 headers, never SDL_opengl.h, for this target.
+if "#if defined(__ANDROID__) || defined(LNG_GLES2)" not in rui_sdl:
     rui_sdl = once(
         rui_sdl,
-        """#if !defined(LNG_SDL3)
-// ---- map SDL3 spellings onto SDL2 -----------------------------------------
-
-// GL header (Android uses GLES; desktop SDL2 uses the system OpenGL header).
-#if defined(__ANDROID__)
+        """#if defined(__ANDROID__)
 #include <SDL_opengles2.h>
 #else
 #include <SDL_opengl.h>
 #endif""",
-        """#if !defined(LNG_SDL3)
-// ---- map SDL3 spellings onto SDL2 -----------------------------------------
-
-// GLES2 handheld builds must never include SDL_opengl.h: doing so can make
-// the launcher compile/link against desktop GL even though the game host is
-// otherwise GLES-only.
-#if defined(__ANDROID__) || defined(LNG_GLES2)
+        """#if defined(__ANDROID__) || defined(LNG_GLES2)
 #include <SDL_opengles2.h>
 #else
 #include <SDL_opengl.h>
 #endif""",
-        "SDL2 GLES2 GL header selection"
+        "SDL2 GLES2 GL header selection",
     )
 
+if "#if defined(LNG_GLES2)" not in rui_sdl:
     rui_sdl = once(
         rui_sdl,
         """#else
@@ -204,16 +125,19 @@ if "defined(LNG_GLES2)" not in rui_sdl:
 #else
 #include <SDL3/SDL_opengl.h>
 #endif""",
-        "SDL3 GLES2 GL header selection"
+        "SDL3 GLES2 GL header selection",
     )
 
-host_path.write_text(host)
-cmake_path.write_text(cmake)
+# Post-patch assertions make this helper safe to run on every clean CI build.
+assert "if(ANDROID OR SNESRECOMP_SDL_GLES2_ONLY)" in rui_cmake
+assert "elseif(SNESRECOMP_SDL_GLES2_ONLY)" in rui_cmake
+assert "defined(LNG_GLES2)" in rui_sdl
+assert "recomp_resolve_gl(RUI_GL_TARGET)" in rui_cmake  # retained only for desktop targets
+
 rui_cmake_path.write_text(rui_cmake)
 rui_sdl_path.write_text(rui_sdl)
-print("SDL2/GLES2-only host + recomp-ui patch applied.")
-print("Configure with: -DSNESRECOMP_SDL_BACKEND=SDL2 -DSNESRECOMP_SDL_GLES2_ONLY=ON")
+print("Verified snesrecomp strict GLES2 host and patched recomp-ui for GLES2.")
 PY
 
-echo "SDL2 GLES2-only host + recomp-ui patch applied."
-echo "Configure with: -DSNESRECOMP_SDL_BACKEND=SDL2 -DSNESRECOMP_SDL_GLES2_ONLY=ON"
+echo "SDL2/GLES2-only host and launcher configuration verified."
+echo "Expected CMake option: -DSNESRECOMP_SDL_GLES2_ONLY=ON"
