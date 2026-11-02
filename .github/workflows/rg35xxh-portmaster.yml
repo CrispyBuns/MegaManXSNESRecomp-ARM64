@@ -2,6 +2,16 @@ name: RG35XX-H PortMaster auto-install
 
 on:
   workflow_dispatch:
+    inputs:
+      build_mode:
+        description: "Build type"
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - pgo-gen
+          - pgo-use
 
 permissions:
   contents: read
@@ -126,10 +136,56 @@ jobs:
         run: |
           bash tools/enable-sdl-opengles2.sh
 
+      - name: Prepare PGO profile for PGO Use
+        if: inputs.build_mode == 'pgo-use'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE_ARCHIVE="private-roms/pgo-profile.tar.gz"
+          test -s "$PROFILE_ARCHIVE" || {
+            echo "::error::PGO Use requires private-roms/pgo-profile.tar.gz. Copy the collected GAMEDIR/debug/pgo directory into that archive and add it to the private ROM repository."
+            exit 1
+          }
+          mkdir -p build-rg35xxh/debug/pgo
+          tar -tzf "$PROFILE_ARCHIVE" >/dev/null
+          tar -xzf "$PROFILE_ARCHIVE" -C build-rg35xxh/debug/pgo --strip-components=0
+          if ! find build-rg35xxh/debug/pgo -type f -name '*.gcda' -print -quit | grep -q .; then
+            echo "::error::The supplied PGO archive contains no .gcda profile data."
+            exit 1
+          fi
+
       - name: Build ARM64 Cortex-A53 executable
         env:
           SNESRECOMP_ANALYSIS_BACKEND: native
+          BUILD_MODE: ${{ inputs.build_mode }}
+        shell: bash
         run: |
+          set -euo pipefail
+          C_FLAGS="-O3 -mcpu=cortex-a53 -flto -fno-math-errno"
+          CXX_FLAGS="-O3 -mcpu=cortex-a53 -flto -fno-math-errno"
+          LINK_FLAGS="-flto"
+          case "$BUILD_MODE" in
+            release)
+              echo "Building standard optimized release."
+              ;;
+            pgo-gen)
+              echo "Building instrumented PGO profile-generation executable."
+              C_FLAGS="$C_FLAGS -fprofile-generate=debug/pgo"
+              CXX_FLAGS="$CXX_FLAGS -fprofile-generate=debug/pgo"
+              LINK_FLAGS="$LINK_FLAGS -fprofile-generate=debug/pgo"
+              ;;
+            pgo-use)
+              echo "Building with collected PGO profiles."
+              C_FLAGS="$C_FLAGS -fprofile-use=build-rg35xxh/debug/pgo -fprofile-correction"
+              CXX_FLAGS="$CXX_FLAGS -fprofile-use=build-rg35xxh/debug/pgo -fprofile-correction"
+              LINK_FLAGS="$LINK_FLAGS -fprofile-use=build-rg35xxh/debug/pgo -fprofile-correction"
+              ;;
+            *)
+              echo "::error::Unknown build_mode: $BUILD_MODE"
+              exit 1
+              ;;
+          esac
+
           bash tools/build-linux-dev.sh \
             --rom "private-roms/Mega Man X (USA) (Rev 1).sfc" \
             --sdl SDL2 --fresh --jobs 4 \
@@ -138,9 +194,9 @@ jobs:
             -DSNESRECOMP_SDL_GLES2_ONLY=ON \
             -DMMX_RASTER_IMPL=NATIVE \
             -DMMX_NATIVE_ROW_PLAN=ON \
-            -DCMAKE_C_FLAGS_RELEASE="-O3 -mcpu=cortex-a53 -flto -fno-math-errno" \
-            -DCMAKE_CXX_FLAGS_RELEASE="-O3 -mcpu=cortex-a53 -flto -fno-math-errno" \
-            -DCMAKE_EXE_LINKER_FLAGS_RELEASE="-flto" \
+            "-DCMAKE_C_FLAGS_RELEASE=$C_FLAGS" \
+            "-DCMAKE_CXX_FLAGS_RELEASE=$CXX_FLAGS" \
+            "-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$LINK_FLAGS" \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
 
       - name: Verify GLES2-only executable (reject desktop OpenGL)
@@ -180,7 +236,7 @@ jobs:
       - name: Upload executable only
         uses: actions/upload-artifact@v6
         with:
-          name: MegaManXSNESRecomp-RG35XX-H-NATIVE
+          name: MegaManXSNESRecomp-RG35XX-H-${{ inputs.build_mode }}
           path: build-rg35xxh/MegaManXSNESRecomp
           if-no-files-found: error
           retention-days: 14
