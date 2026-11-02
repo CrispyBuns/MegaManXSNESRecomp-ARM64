@@ -136,23 +136,22 @@ jobs:
         run: |
           bash tools/enable-sdl-opengles2.sh
 
-      - name: Prepare PGO profile for PGO Use
+      - name: Validate PGO profile files
         if: inputs.build_mode == 'pgo-use'
         shell: bash
         run: |
           set -euo pipefail
-          PROFILE_ARCHIVE="private-roms/pgo-profile.tar.gz"
-          test -s "$PROFILE_ARCHIVE" || {
-            echo "::error::PGO Use requires private-roms/pgo-profile.tar.gz. Copy the collected GAMEDIR/debug/pgo directory into that archive and add it to the private ROM repository."
-            exit 1
-          }
-          mkdir -p pgo-input
-          tar -tzf "$PROFILE_ARCHIVE" >/dev/null
-          tar -xzf "$PROFILE_ARCHIVE" -C pgo-input/debug/pgo --strip-components=0
-          if ! find pgo-input/debug/pgo -type f -name '*.gcda' -print -quit | grep -q .; then
-            echo "::error::The supplied PGO archive contains no .gcda profile data."
+          PROFILE_DIR="PGO/debug/pgo"
+          if [ ! -d "$PROFILE_DIR" ]; then
+            echo "::error::PGO Use requires profile files in PGO/debug/pgo/ in this repository."
             exit 1
           fi
+          if ! find "$PROFILE_DIR" -type f -name '*.gcda' -print -quit | grep -q .; then
+            echo "::error::No .gcda profile data found in PGO/debug/pgo/."
+            exit 1
+          fi
+          echo "Found GCC profile data:"
+          find "$PROFILE_DIR" -type f -name '*.gcda' -print
 
       - name: Build ARM64 Cortex-A53 executable
         env:
@@ -176,9 +175,9 @@ jobs:
               ;;
             pgo-use)
               echo "Building with collected PGO profiles."
-              C_FLAGS="$C_FLAGS -fprofile-use=pgo-input/debug/pgo -fprofile-correction"
-              CXX_FLAGS="$CXX_FLAGS -fprofile-use=pgo-input/debug/pgo -fprofile-correction"
-              LINK_FLAGS="$LINK_FLAGS -fprofile-use=pgo-input/debug/pgo -fprofile-correction"
+              C_FLAGS="$C_FLAGS -fprofile-use=PGO/debug/pgo -fprofile-correction"
+              CXX_FLAGS="$CXX_FLAGS -fprofile-use=PGO/debug/pgo -fprofile-correction"
+              LINK_FLAGS="$LINK_FLAGS -fprofile-use=PGO/debug/pgo -fprofile-correction"
               ;;
             *)
               echo "::error::Unknown build_mode: $BUILD_MODE"
