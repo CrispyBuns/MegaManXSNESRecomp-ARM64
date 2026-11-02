@@ -195,6 +195,29 @@ jobs:
             cp -a assets/. "$PORTDIR/roms/assets/"
           fi
 
+          # recomp-ui stages its required runtime font and image files beside
+          # the built executable. The launcher resolves these via SDL_GetBasePath:
+          # assets/fonts/LatoLatin-Regular.ttf, assets/img/flags.png, etc.
+          # The PortMaster package uses assets -> roms/assets, so preserve that
+          # exact runtime tree by copying the build-staged assets into roms/assets.
+          for required in \
+            build-rg35xxh/assets/fonts/LatoLatin-Regular.ttf \
+            build-rg35xxh/assets/fonts/LatoLatin-Bold.ttf \
+            build-rg35xxh/assets/fonts/OpenMoji-black-glyf.ttf \
+            build-rg35xxh/assets/fonts/NotoSansSymbols2-Regular.ttf \
+            build-rg35xxh/assets/img/flags.png \
+            build-rg35xxh/assets/img/pad.tga; do
+            test -s "$required" || {
+              echo "::error::Required recomp-ui runtime asset was not staged: $required"
+              echo "Available build assets:"
+              find build-rg35xxh/assets -maxdepth 3 -type f -printf '%p (%s bytes)\\n' 2>/dev/null | sort || true
+              exit 1
+            }
+          done
+          mkdir -p "$PORTDIR/roms/assets/fonts" "$PORTDIR/roms/assets/img"
+          cp -a build-rg35xxh/assets/fonts/. "$PORTDIR/roms/assets/fonts/"
+          cp -a build-rg35xxh/assets/img/. "$PORTDIR/roms/assets/img/"
+
           # Preloaded mod catalog expected by the game.
           test -d build-rg35xxh/mods/preloaded/packages || {
             echo "::error::Build did not stage the mod catalog"
@@ -271,6 +294,12 @@ jobs:
           test -s "$PORTDIR/roms/$X2_ROM_REL"
           test -s "$PORTDIR/roms/$X3_ROM_REL"
           test -s "$PORTDIR/mods/preloaded/state.toml"
+          test -s "$PORTDIR/assets/fonts/LatoLatin-Regular.ttf"
+          test -s "$PORTDIR/assets/fonts/LatoLatin-Bold.ttf"
+          test -s "$PORTDIR/assets/fonts/OpenMoji-black-glyf.ttf"
+          test -s "$PORTDIR/assets/fonts/NotoSansSymbols2-Regular.ttf"
+          test -s "$PORTDIR/assets/img/flags.png"
+          test -s "$PORTDIR/assets/img/pad.tga"
           test -L "$PORTDIR/mmx.sfc"
           test -L "$PORTDIR/assets"
           test -f "$PKG/port.json"
