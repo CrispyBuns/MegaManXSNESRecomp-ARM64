@@ -101,7 +101,7 @@ jobs:
           sudo apt-get install -y \
             build-essential cmake ninja-build git pkg-config \
             python3 python3-pip python3-pil \
-            libsdl2-dev libegl1-mesa-dev libgles2-mesa-dev libgl1-mesa-dev
+            libsdl2-dev libegl1-mesa-dev libgles2-mesa-dev
 
       - name: Install Rust analyzer toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -126,6 +126,32 @@ jobs:
             -DCMAKE_CXX_FLAGS_RELEASE="-O3 -mcpu=cortex-a53 -flto -fno-math-errno" \
             -DCMAKE_EXE_LINKER_FLAGS_RELEASE="-flto" \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
+
+      - name: Verify GLES2-only executable (reject desktop OpenGL)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="build-rg35xx-h/MegaManXSNESRecomp"
+          CACHE="build-rg35xx-h/CMakeCache.txt"
+
+          grep -Fxq 'SNESRECOMP_SDL_GLES2_ONLY:BOOL=ON' "$CACHE" || {
+            echo "::error::CMake did not enable strict SDL2/GLES2-only mode"
+            exit 1
+          }
+
+          if readelf -d "$BIN" | grep -E '\(NEEDED\).*\[(lib(OpenGL|GL|GLX|GLU)\.so(\.[0-9]+)?)\]'; then
+            echo "::error::The handheld executable still links desktop OpenGL"
+            exit 1
+          fi
+
+          grep -Fq 'recomp-ui: SDL2 OpenGL ES 2 backend; desktop OpenGL disabled' \
+            build-rg35xx-h/configure.log || {
+              echo "::error::recomp-ui did not configure its GLES2 backend"
+              exit 1
+            }
+
+          echo "Verified: strict SDL2 opengles2 host; no desktop GL NEEDED entries."
+          readelf -d "$BIN" | grep NEEDED || true
 
       - name: Assemble PortMaster auto-install folder
         shell: bash
