@@ -210,7 +210,7 @@ jobs:
             test -s "$required" || {
               echo "::error::Required recomp-ui runtime asset was not staged: $required"
               echo "Available build assets:"
-              find build-rg35xxh/assets -maxdepth 3 -type f -printf '%p (%s bytes)\\n' 2>/dev/null | sort || true
+              find build-rg35xxh/assets -maxdepth 3 -type f -printf '%p (%s bytes)\n' 2>/dev/null | sort || true
               exit 1
             }
           done
