@@ -232,10 +232,23 @@ jobs:
           echo "Verified: strict SDL2 opengles2 host; no desktop GL NEEDED entries."
           readelf -d "$BIN" | grep NEEDED || true
 
-      - name: Upload executable only
+      - name: Package executable and PortMaster launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_DIR="package/megamanx-snes-recomp"
+          mkdir -p "$PACKAGE_DIR"
+          install -m 0755 build-rg35xxh/MegaManXSNESRecomp "$PACKAGE_DIR/MegaManXSNESRecomp"
+          install -m 0755 "port-files/ports/unreleased/megamanx-snes-recomp/Mega Man X Recompiled.sh" "$PACKAGE_DIR/Mega Man X Recompiled.sh"
+          test -x "$PACKAGE_DIR/MegaManXSNESRecomp"
+          test -x "$PACKAGE_DIR/Mega Man X Recompiled.sh"
+          echo "Packaged files:"
+          ls -l "$PACKAGE_DIR"
+
+      - name: Upload complete install package
         uses: actions/upload-artifact@v6
         with:
           name: MegaManXSNESRecomp-RG35XX-H-${{ inputs.build_mode }}
-          path: build-rg35xxh/MegaManXSNESRecomp
+          path: package/megamanx-snes-recomp/
           if-no-files-found: error
           retention-days: 14
