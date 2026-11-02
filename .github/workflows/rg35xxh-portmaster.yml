@@ -24,6 +24,13 @@ jobs:
           bash -n tools/build-linux-dev.sh
           bash -n tools/enable-sdl-opengles2.sh
 
+      - name: Check out PortMaster package files
+        uses: actions/checkout@v6
+        with:
+          repository: CrispyBuns/RHH-Ports
+          ref: main
+          path: port-files
+
       - name: Check out private ROM repository
         uses: actions/checkout@v6
         with:
@@ -160,39 +167,42 @@ jobs:
           echo "Verified: strict SDL2 opengles2 host; no desktop GL NEEDED entries."
           readelf -d "$BIN" | grep NEEDED || true
 
-      - name: Assemble PortMaster auto-install folder
+      - name: Assemble PortMaster auto-install package (root launcher + payload folder)
         shell: bash
         run: |
           set -euo pipefail
-          PKG="dist/MegaManXSNESRecomp"
-          mkdir -p "$PKG/roms/assets" "$PKG/userdata"
 
-          install -m 755 build-rg35xxh/MegaManXSNESRecomp "$PKG/MegaManXSNESRecomp"
-          install -m 644 config.ini "$PKG/config.ini"
-          install -m 644 logging.ini "$PKG/logging.ini"
+          # Match the working Rusty/RHH-Ports structure:
+          # /roms/ports/Mega Man X Recompiled.sh
+          # /roms/ports/megamanx-snes-recomp/<game files>
+          PKG="dist"
+          PORTDIR="$PKG/megamanx-snes-recomp"
+          ZIP="$GITHUB_WORKSPACE/dist/MegaManXSNESRecomp-RG35XX-H-PortMaster.zip"
+          rm -rf "$PKG"
+          mkdir -p "$PORTDIR/roms/assets" "$PORTDIR/userdata" "$PORTDIR/mods/preloaded"
 
-          # X1 lives in roms/; detected X2/X3 donor paths are preserved under roms/.
-          install -m 644 "private-roms/Mega Man X (USA) (Rev 1).sfc" "$PKG/roms/"
-          # Preserve each detected donor ROM's original relative path and filename.
-          install -D -m 644 "private-roms/$X2_ROM_REL" "$PKG/roms/$X2_ROM_REL"
-          install -D -m 644 "private-roms/$X3_ROM_REL" "$PKG/roms/$X3_ROM_REL"
+          install -m 755 build-rg35xxh/MegaManXSNESRecomp "$PORTDIR/MegaManXSNESRecomp"
+          install -m 644 config.ini "$PORTDIR/config.ini"
+          install -m 644 logging.ini "$PORTDIR/logging.ini"
 
-          # Ship the project's external runtime art/audio assets under roms/assets.
+          # X1 is at roms/; detected X2/X3 donor paths are preserved under roms/.
+          install -m 644 "private-roms/Mega Man X (USA) (Rev 1).sfc" "$PORTDIR/roms/"
+          install -D -m 644 "private-roms/$X2_ROM_REL" "$PORTDIR/roms/$X2_ROM_REL"
+          install -D -m 644 "private-roms/$X3_ROM_REL" "$PORTDIR/roms/$X3_ROM_REL"
+
+          # Project runtime art/audio assets live in roms/assets/.
           if [ -d assets ]; then
-            cp -a assets/. "$PKG/roms/assets/"
+            cp -a assets/. "$PORTDIR/roms/assets/"
           fi
 
-          # Stage the project's actual preloaded mod catalog beside the executable.
-          # The launcher reads it from mods/preloaded/packages.
+          # Preloaded mod catalog expected by the game.
           test -d build-rg35xxh/mods/preloaded/packages || {
             echo "::error::Build did not stage the mod catalog"
             exit 1
           }
-          mkdir -p "$PKG/mods/preloaded"
-          cp -a build-rg35xxh/mods/preloaded/packages "$PKG/mods/preloaded/"
+          cp -a build-rg35xxh/mods/preloaded/packages "$PORTDIR/mods/preloaded/"
 
           # Preselect the content-identified X2/X3 donor ROMs for the mod pickers.
-          # JSON string escaping is compatible with TOML basic strings.
           python3 - <<'PY'
           import json
           import os
@@ -201,113 +211,104 @@ jobs:
           x2 = "roms/" + os.environ["X2_ROM_REL"]
           x3 = "roms/" + os.environ["X3_ROM_REL"]
           state = (
-              "format_version = 1\n\n"
-              "[[shared_resource]]\n"
-              'id = "megaman-x.source.x2"\n'
-              f"path = {json.dumps(x2)}\n\n"
-              "[[shared_resource]]\n"
-              'id = "megaman-x.source.x3"\n'
-              f"path = {json.dumps(x3)}\n"
+              "format_version = 1\\n\\n"
+              "[[shared_resource]]\\n"
+              'id = "megaman-x.source.x2"\\n'
+              f"path = {json.dumps(x2)}\\n\\n"
+              "[[shared_resource]]\\n"
+              'id = "megaman-x.source.x3"\\n'
+              f"path = {json.dumps(x3)}\\n"
           )
-          Path("dist/MegaManXSNESRecomp/mods/preloaded/state.toml").write_text(
+          Path("dist/megamanx-snes-recomp/mods/preloaded/state.toml").write_text(
               state, encoding="utf-8"
           )
           PY
 
-          # The game/recompiler expects the verified X1 image at mmx.sfc.
-          ln -s "roms/Mega Man X (USA) (Rev 1).sfc" "$PKG/mmx.sfc"
+          # Runtime paths expected by the recomp.
+          ln -s "roms/Mega Man X (USA) (Rev 1).sfc" "$PORTDIR/mmx.sfc"
+          ln -s "roms/assets" "$PORTDIR/assets"
 
-          # Runtime looks for project art relative to the application directory.
-          ln -s "roms/assets" "$PKG/assets"
+          # Use the established RHH-Ports launcher at the ZIP root.
+          install -m 755 "port-files/ports/unreleased/megamanx-snes-recomp/Mega Man X Recompiled.sh" \
+            "$PKG/Mega Man X Recompiled.sh"
+          install -m 644 "port-files/ports/unreleased/megamanx-snes-recomp/port.json" \
+            "$PKG/port.json"
 
-          cat > "$PKG/MegaManXSNESRecomp.sh" <<'LAUNCHER'
-          #!/bin/bash
-          set -euo pipefail
+          # Request GLES2 explicitly in the packaged launcher.
+          python3 - <<'PY'
+          from pathlib import Path
+          launcher = Path("dist/Mega Man X Recompiled.sh")
+          source = launcher.read_text(encoding="utf-8")
+          needle = 'export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"'
+          replacement = 'export SDL_RENDER_DRIVER=opengles2\\n' + needle
+          if needle not in source:
+              raise SystemExit("Could not locate SDL controller environment setup in PortMaster launcher")
+          launcher.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
+          PY
 
-          export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-          if [ -d "/opt/system/Tools/PortMaster" ]; then
-              controlfolder="/opt/system/Tools/PortMaster"
-          elif [ -d "/opt/tools/PortMaster" ]; then
-              controlfolder="/opt/tools/PortMaster"
-          elif [ -d "$XDG_DATA_HOME/PortMaster" ]; then
-              controlfolder="$XDG_DATA_HOME/PortMaster"
-          else
-              controlfolder="/roms/ports/PortMaster"
-          fi
-
-          if [ ! -r "$controlfolder/control.txt" ]; then
-              echo "PortMaster control.txt not found: $controlfolder/control.txt" >&2
-              exit 1
-          fi
-          source "$controlfolder/control.txt"
-          if [ -f "$controlfolder/mod_${CFW_NAME}.txt" ]; then
-              source "$controlfolder/mod_${CFW_NAME}.txt"
-          fi
-          get_controls
-
-          GAMEDIR="$(cd "$(dirname "$0")" && pwd)"
-          GAME="$GAMEDIR/MegaManXSNESRecomp"
-          LOGFILE="$GAMEDIR/log.txt"
-          mkdir -p "$GAMEDIR/userdata"
-          cd "$GAMEDIR"
-
-          if [ -d "$GAMEDIR/libs" ]; then
-              export LD_LIBRARY_PATH="$GAMEDIR/libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          fi
-          export SDL_RENDER_DRIVER=opengles2
-
-          GPTOKEYB_PID=""
-          finish_portmaster() {
-              if [ -n "$GPTOKEYB_PID" ]; then
-                  kill "$GPTOKEYB_PID" 2>/dev/null || true
-                  wait "$GPTOKEYB_PID" 2>/dev/null || true
-              fi
-              pm_finish
-          }
-          trap finish_portmaster EXIT
-          trap 'exit 129' HUP
-          trap 'exit 130' INT
-          trap 'exit 143' TERM
-
-          if [ ! -x "$GAME" ]; then
-              pm_show_error "Mega Man X Recompiled executable is missing. Reinstall the port."
-              exit 1
-          fi
-
-          pm_platform_helper "$GAME" >/dev/null 2>&1 || true
-          echo "[launcher] Mega Man X Recompiled starting on $(uname -m)" > "$LOGFILE"
-          echo "[launcher] SDL renderer requested: opengles2" >> "$LOGFILE"
-          set +e
-          "$GAME" >> "$LOGFILE" 2>&1
-          GAME_STATUS=$?
-          set -e
-          echo "[launcher] Game exited with status $GAME_STATUS" >> "$LOGFILE"
-          exit "$GAME_STATUS"
-          LAUNCHER
-          chmod 755 "$PKG/MegaManXSNESRecomp.sh"
-          # Fail the build if either detected donor ROM or either launcher is absent.
-          test -s "$PKG/roms/$X2_ROM_REL"
-          test -s "$PKG/roms/$X3_ROM_REL"
-          test -x "$PKG/MegaManXSNESRecomp.sh"
-          echo "Packaged donor ROMs:"
-          printf '  X2: %s\\n  X3: %s\\n' "$PKG/roms/$X2_ROM_REL" "$PKG/roms/$X3_ROM_REL"
-          echo "Packaged launchers:"
-          ls -l "$PKG/MegaManXSNESRecomp.sh"
-
-          cat > "$PKG/README.txt" <<'README'
+          cat > "$PORTDIR/README.txt" <<'README'
           Mega Man X Recompiled - RG35XX-H / KNULLI
-          Install the MegaManXSNESRecomp folder under /roms/ports/.
-          Launch MegaManXSNESRecomp.sh from PortMaster.
-          The three ROMs are in roms/ and project assets are in roms/assets/.
+
+          Install this ZIP with PortMaster/HarbourMaster. The launcher
+          "Mega Man X Recompiled.sh" is placed directly in /roms/ports/.
+          The game payload is placed in /roms/ports/megamanx-snes-recomp/.
+
+          The three ROMs are in megamanx-snes-recomp/roms/ and project assets
+          are in megamanx-snes-recomp/roms/assets/.
           X2 and X3 are preselected as donor ROMs for the corresponding Mods
           source pickers; enable the desired X2/X3 weapon features in Mods.
           X3 is shared by Zero, co-op and X3 weapons.
-          SDL2 is configured to request OpenGL ES 2. This build does not use
-          GL4ES or the desktop OpenGL/KMS/DRM presenter.
+
+          SDL2 requests OpenGL ES 2. This build does not use GL4ES or the
+          desktop OpenGL/KMS/DRM presenter.
           README
 
-          cd dist
-          zip -qr MegaManXSNESRecomp-RG35XX-H-PortMaster.zip MegaManXSNESRecomp
+          # Assert the on-device paths before creating the ZIP.
+          test -x "$PKG/Mega Man X Recompiled.sh"
+          test -s "$PORTDIR/MegaManXSNESRecomp"
+          test -s "$PORTDIR/roms/Mega Man X (USA) (Rev 1).sfc"
+          test -s "$PORTDIR/roms/$X2_ROM_REL"
+          test -s "$PORTDIR/roms/$X3_ROM_REL"
+          test -s "$PORTDIR/mods/preloaded/state.toml"
+          test -L "$PORTDIR/mmx.sfc"
+          test -L "$PORTDIR/assets"
+          test -f "$PKG/port.json"
+          test ! -e "$PORTDIR/Mega Man X Recompiled.sh"
+
+          echo "PortMaster install layout:"
+          find "$PKG" -maxdepth 4 -printf '%y %p\\n' | sort
+
+          cd "$PKG"
+          zip -qr "$ZIP" "Mega Man X Recompiled.sh" port.json megamanx-snes-recomp
+
+          # Validate archive paths: launcher and port.json at ZIP root,
+          # executable and resources one level below in the lowercase payload.
+          python3 - "$ZIP" <<'PY'
+          import sys
+          from zipfile import ZipFile
+
+          archive = sys.argv[1]
+          with ZipFile(archive) as zf:
+              names = set(zf.namelist())
+          required = {
+              "Mega Man X Recompiled.sh",
+              "port.json",
+              "megamanx-snes-recomp/MegaManXSNESRecomp",
+              "megamanx-snes-recomp/config.ini",
+              "megamanx-snes-recomp/logging.ini",
+              "megamanx-snes-recomp/roms/Mega Man X (USA) (Rev 1).sfc",
+          }
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit(f"Archive is missing required paths: {missing}")
+          if any(name.startswith("MegaManXSNESRecomp/") for name in names):
+              raise SystemExit("Unexpected nested MegaManXSNESRecomp/ directory in archive")
+          if "megamanx-snes-recomp/Mega Man X Recompiled.sh" in names:
+              raise SystemExit("Launcher is incorrectly nested inside the payload directory")
+          print("Verified ZIP layout: root launcher + root port.json + megamanx-snes-recomp/ payload")
+          PY
+
+          unzip -l "$ZIP"
 
       - name: Upload PortMaster auto-install package
         uses: actions/upload-artifact@v6
