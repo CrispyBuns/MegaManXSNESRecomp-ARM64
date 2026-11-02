@@ -211,13 +211,13 @@ jobs:
           x2 = "roms/" + os.environ["X2_ROM_REL"]
           x3 = "roms/" + os.environ["X3_ROM_REL"]
           state = (
-              "format_version = 1\\n\\n"
-              "[[shared_resource]]\\n"
-              'id = "megaman-x.source.x2"\\n'
-              f"path = {json.dumps(x2)}\\n\\n"
-              "[[shared_resource]]\\n"
-              'id = "megaman-x.source.x3"\\n'
-              f"path = {json.dumps(x3)}\\n"
+              "format_version = 1\n\n"
+              "[[shared_resource]]\n"
+              'id = "megaman-x.source.x2"\n'
+              f"path = {json.dumps(x2)}\n\n"
+              "[[shared_resource]]\n"
+              'id = "megaman-x.source.x3"\n'
+              f"path = {json.dumps(x3)}\n"
           )
           Path("dist/megamanx-snes-recomp/mods/preloaded/state.toml").write_text(
               state, encoding="utf-8"
@@ -240,11 +240,12 @@ jobs:
           launcher = Path("dist/Mega Man X Recompiled.sh")
           source = launcher.read_text(encoding="utf-8")
           needle = 'export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"'
-          replacement = 'export SDL_RENDER_DRIVER=opengles2\\n' + needle
+          replacement = 'export SDL_RENDER_DRIVER=opengles2\n' + needle
           if needle not in source:
               raise SystemExit("Could not locate SDL controller environment setup in PortMaster launcher")
           launcher.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
           PY
+          bash -n "$PKG/Mega Man X Recompiled.sh"
 
           cat > "$PORTDIR/README.txt" <<'README'
           Mega Man X Recompiled - RG35XX-H / KNULLI
@@ -276,7 +277,7 @@ jobs:
           test ! -e "$PORTDIR/Mega Man X Recompiled.sh"
 
           echo "PortMaster install layout:"
-          find "$PKG" -maxdepth 4 -printf '%y %p\\n' | sort
+          find "$PKG" -maxdepth 4 -printf '%y %p\n' | sort
 
           cd "$PKG"
           zip -qr "$ZIP" "Mega Man X Recompiled.sh" port.json megamanx-snes-recomp
