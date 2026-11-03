@@ -89,7 +89,7 @@ jobs:
 
           test -f "private-roms/Mega Man X (USA) (Rev 1).sfc"
 
-          test -f "megamanx.gptk" || {
+          test -f "controls/megamanx.gptk" || {
             echo "megamanx.gptk is missing from the repository."
             exit 1
           }
@@ -139,7 +139,7 @@ jobs:
           cp build-r36s/MegaManXSNESRecomp \
             package/megamanx/MegaManXSNESRecomp
 
-          cp megamanx.gptk \
+          cp controls/megamanx.gptk \
             package/megamanx/megamanx.gptk
 
           chmod +x package/megamanx/MegaManXSNESRecomp
