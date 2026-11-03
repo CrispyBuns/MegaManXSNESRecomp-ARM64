@@ -1,0 +1,175 @@
+
+name: Mega Man X - R36S-DARKOSRE PortMaster Auto Install
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Requires a self-hosted Ubuntu 20.04 ARM64 runner.
+    runs-on: [self-hosted, linux, ARM64, ubuntu-20.04]
+
+    steps:
+      - name: Checkout MMX Recomp
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify ARM64 runner
+        run: |
+          set -e
+          test "$(uname -m)" = "aarch64"
+          uname -a
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            git \
+            pkg-config \
+            python3 \
+            python3-pip \
+            python3-pil \
+            libsdl2-dev \
+            libegl1-mesa-dev \
+            libgles2-mesa-dev \
+            binutils \
+            zip \
+            unzip
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Enable SDL2 GLES2
+        run: |
+          bash tools/enable-sdl-opengles2.sh
+
+      - name: Checkout private ROM repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.ROM_REPO }}
+          token: ${{ secrets.ROM_TOKEN }}
+          path: private-roms
+          lfs: true
+          persist-credentials: false
+
+      - name: Validate ROM and GPTK
+        run: |
+          set -e
+
+          test -f "private-roms/Mega Man X (USA) (Rev 1).sfc"
+
+          test -f "megamanx.gptk" || {
+            echo "megamanx.gptk is missing from the repository."
+            exit 1
+          }
+
+      - name: Build A53 optimized GLES2 executable
+        run: |
+          set -e
+
+          export CFLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          export CXXFLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          export LDFLAGS="-flto"
+
+          bash tools/build-linux-dev.sh \
+            --rom "private-roms/Mega Man X (USA) (Rev 1).sfc" \
+            --sdl SDL2 \
+            --fresh \
+            --jobs 4 \
+            --build-dir build-r36s \
+            -- \
+            -DSNESRECOMP_SDL_GLES2_ONLY=ON \
+            -DMMX_RASTER_IMPL=NATIVE \
+            -DMMX_NATIVE_ROW_PLAN=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
+
+      - name: Verify executable
+        run: |
+          set -e
+
+          test -f build-r36s/MegaManXSNESRecomp
+
+          readelf -d build-r36s/MegaManXSNESRecomp \
+            | tee dependencies.txt
+
+          if grep -E 'libOpenGL|libGLX|libGLU' dependencies.txt; then
+            echo "Unexpected desktop OpenGL dependency."
+            exit 1
+          fi
+
+      - name: Prepare PortMaster package
+        run: |
+          set -e
+
+          mkdir -p package/ports
+          mkdir -p package/megamanx
+
+          cp build-r36s/MegaManXSNESRecomp \
+            package/megamanx/MegaManXSNESRecomp
+
+          cp megamanx.gptk \
+            package/megamanx/megamanx.gptk
+
+          chmod +x package/megamanx/MegaManXSNESRecomp
+
+      - name: Create PortMaster launcher
+        run: |
+          cat > package/ports/megamanx.sh <<'EOF'
+          #!/bin/bash
+
+          PORTNAME="Mega Man X"
+          PORTDIR="/$directory/megamanx"
+          GAMEDIR="/userdata/roms/ports/megamanx"
+
+          cd "$GAMEDIR" || exit 1
+
+          export LD_LIBRARY_PATH="$GAMEDIR/libs:$LD_LIBRARY_PATH"
+
+          get_controls
+
+          ./MegaManXSNESRecomp
+
+          exit 0
+          EOF
+
+          chmod +x package/ports/megamanx.sh
+
+      - name: Package PortMaster installation
+        run: |
+          set -e
+
+          cd package
+
+          zip -r ../MegaManX-R36S-DARKOSRE-PortMaster.zip \
+            ports/megamanx.sh \
+            megamanx/
+
+      - name: Verify no standalone SNES ROM is included
+        run: |
+          set -e
+
+          if unzip -Z1 MegaManX-R36S-DARKOSRE-PortMaster.zip \
+            | grep -Ei '\.(sfc|smc)$'; then
+            echo "ROM detected in package!"
+            exit 1
+          fi
+
+          unzip -l MegaManX-R36S-DARKOSRE-PortMaster.zip
+
+      - name: Upload PortMaster package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MegaManX-R36S-DARKOSRE-PortMaster
+          path: MegaManX-R36S-DARKOSRE-PortMaster.zip
+          retention-days: 14
+          
