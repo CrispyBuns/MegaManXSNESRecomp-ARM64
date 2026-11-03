@@ -87,6 +87,7 @@ jobs:
             -DSNESRECOMP_SDL_GLES2_ONLY=ON \
             -DMMX_RASTER_IMPL=NATIVE \
             -DMMX_NATIVE_ROW_PLAN=ON \
+            -DMMX_NATIVE_BG_SPANS=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
 
