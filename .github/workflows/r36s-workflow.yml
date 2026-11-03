@@ -25,7 +25,9 @@ jobs:
           apt-get install -y --no-install-recommends \
             ca-certificates \
             curl \
-            git
+            git \
+            git-lfs
+          git lfs install
 
       - name: Checkout MMX Recomp
         uses: actions/checkout@v4
