@@ -51,13 +51,11 @@ jobs:
           apt-get update
           apt-get install -y \
             build-essential \
-            cmake \
             ninja-build \
             git \
             pkg-config \
-            python3 \
-            python3-pip \
-            python3-pil \
+            curl \
+            ca-certificates \
             libsdl2-dev \
             libegl1-mesa-dev \
             libgles2-mesa-dev \
@@ -65,13 +63,22 @@ jobs:
             zip \
             unzip
 
-          # Ubuntu 20.04 ships CMake 3.16.3; the project requires >= 3.20.
-          # Install a known compatible CMake release for the ARM64 container.
-          export PIP_CACHE_DIR=/tmp/pip-cache
-          python3 -m pip install --no-cache-dir --upgrade cmake==3.31.10
-          hash -r
+          # Keep Ubuntu 20.04 / glibc 2.31 while replacing its obsolete
+          # Python 3.8.10 build interpreter with an isolated Python 3.11.
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          uv python install 3.11
+          uv venv --python 3.11 /opt/py311
+          uv pip install --python /opt/py311/bin/python \
+            cmake==3.31.10 pillow
+
+          # Later steps resolve python3, pip and cmake from this environment.
+          echo "/opt/py311/bin" >> "$GITHUB_PATH"
+          export PATH="/opt/py311/bin:$PATH"
+          python3 --version
+          python3 -c 'import sys; assert sys.version_info >= (3, 9)'
           cmake --version
-          cmake --version | grep -Eq '^cmake version 3\.(2[0-9]|[3-9][0-9])'
+          cmake --version | grep -Eq '^cmake version 3\\.(2[0-9]|[3-9][0-9])'
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
