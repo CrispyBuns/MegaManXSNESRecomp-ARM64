@@ -9,25 +9,45 @@ permissions:
 
 jobs:
   build:
-    # Requires a self-hosted Ubuntu 20.04 ARM64 runner.
-    runs-on: [self-hosted, linux, ARM64, ubuntu-20.04]
+    # GitHub-hosted ARM64 runner; all build steps execute inside Ubuntu 20.04 ARM64.
+    runs-on: ubuntu-24.04-arm
+
+    container:
+      image: ubuntu:20.04
 
     steps:
+      # The base Ubuntu container is minimal. Install git before checkout actions run.
+      - name: Bootstrap Ubuntu 20.04 container
+        run: |
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git
+
       - name: Checkout MMX Recomp
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Verify ARM64 runner
+      - name: Verify Ubuntu 20.04 ARM64 build environment
         run: |
           set -e
           test "$(uname -m)" = "aarch64"
+          grep -q 'VERSION_ID="20.04"' /etc/os-release
           uname -a
+          cat /etc/os-release
+          getconf GNU_LIBC_VERSION
+          test "$(getconf GNU_LIBC_VERSION | awk '{print $2}')" = "2.31"
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y \
             build-essential \
             cmake \
             ninja-build \
