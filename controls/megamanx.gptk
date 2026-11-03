@@ -1,0 +1,28 @@
+# Mega Man X Recompiled - RG35XX-H
+# GPTOKEYB v1 keyboard mapping
+
+# Face buttons
+a = x
+b = z
+x = s
+y = a
+
+# Shoulder buttons
+l1 = c
+r1 = v
+l2 = q
+r2 = e
+
+# Stick clicks unused
+l3 = ""
+r3 = ""
+
+# Start / Select
+start = enter
+select = rightshift
+
+# D-pad
+up = up
+down = down
+left = left
+right = right
