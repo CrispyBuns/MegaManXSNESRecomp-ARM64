@@ -1,0 +1,166 @@
+name: RG35XX-H A53 Optimized Binary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-rg35xxh:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@v6
+        with:
+          ref: sdl-opengles2
+          submodules: recursive
+
+      - name: Install ARM64 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            git \
+            pkg-config \
+            python3 \
+            python3-pip \
+            python3-pil \
+            libsdl2-dev \
+            libegl1-mesa-dev \
+            libgles2-mesa-dev
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Enable SDL2 OpenGL ES 2
+        run: |
+          bash tools/enable-sdl-opengles2.sh
+
+      - name: Check out private ROM repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ secrets.ROM_REPO }}
+          token: ${{ secrets.ROM_TOKEN }}
+          path: private-roms
+          lfs: true
+          persist-credentials: false
+
+      - name: Validate X1 ROM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ROM="private-roms/Mega Man X (USA) (Rev 1).sfc"
+
+          if [ ! -s "$ROM" ]; then
+            echo "::error::Missing Mega Man X ROM"
+            exit 1
+          fi
+
+          echo "ROM found:"
+          ls -lh "$ROM"
+
+      - name: Build optimized Cortex-A53 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          C_FLAGS="
+            -O3
+            -mcpu=cortex-a53
+            -flto
+            -ffast-math
+            -fno-math-errno
+          "
+
+          CXX_FLAGS="
+            -O3
+            -mcpu=cortex-a53
+            -flto
+            -ffast-math
+            -fno-math-errno
+          "
+
+          LINK_FLAGS="
+            -flto
+          "
+
+          bash tools/build-linux-dev.sh \
+            --rom "private-roms/Mega Man X (USA) (Rev 1).sfc" \
+            --sdl SDL2 \
+            --fresh \
+            --jobs 4 \
+            --build-dir build-rg35xxh \
+            -- \
+            -DSNESRECOMP_SDL_GLES2_ONLY=ON \
+            -DMMX_RASTER_IMPL=NATIVE \
+            -DMMX_NATIVE_ROW_PLAN=ON \
+            "-DCMAKE_C_FLAGS_RELEASE=$C_FLAGS" \
+            "-DCMAKE_CXX_FLAGS_RELEASE=$CXX_FLAGS" \
+            "-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$LINK_FLAGS" \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
+
+      - name: Verify optimized binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BIN="build-rg35xxh/MegaManXSNESRecomp"
+          CACHE="build-rg35xxh/CMakeCache.txt"
+
+          test -x "$BIN" || {
+            echo "::error::MegaManXSNESRecomp was not built"
+            exit 1
+          }
+
+          grep -Fxq \
+            'SNESRECOMP_SDL_GLES2_ONLY:BOOL=ON' \
+            "$CACHE" || {
+              echo "::error::SDL2 GLES2-only mode was not enabled"
+              exit 1
+            }
+
+          grep -Fxq \
+            'MMX_RASTER_IMPL:STRING=NATIVE' \
+            "$CACHE" || {
+              echo "::error::Native raster implementation was not enabled"
+              exit 1
+            }
+
+          grep -Fxq \
+            'MMX_NATIVE_ROW_PLAN:BOOL=ON' \
+            "$CACHE" || {
+              echo "::error::Native row planning was not enabled"
+              exit 1
+            }
+
+          echo "=== Dynamic dependencies ==="
+          readelf -d "$BIN" | grep NEEDED || true
+
+          if readelf -d "$BIN" | grep -E \
+            '\(NEEDED\).*lib(OpenGL|GLX|GLU)\.so'; then
+            echo "::error::Desktop OpenGL dependency detected"
+            exit 1
+          fi
+
+          echo
+          echo "=== Binary ==="
+          ls -lh "$BIN"
+
+          echo
+          echo "=== File ==="
+          file "$BIN"
+
+      - name: Upload binary only
+        uses: actions/upload-artifact@v6
+        with:
+          name: MegaManXSNESRecomp-RG35XX-H-A53
+          path: build-rg35xxh/MegaManXSNESRecomp
+          if-no-files-found: error
+          retention-days: 14
