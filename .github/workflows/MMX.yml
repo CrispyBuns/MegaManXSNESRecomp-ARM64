@@ -73,8 +73,8 @@ jobs:
 
           # These environment variables are read by CMake on its first,
           # clean configure. Keep them as single-line values.
-          export CFLAGS="-mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
-          export CXXFLAGS="-mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          export CFLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          export CXXFLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
           export LDFLAGS="-flto"
 
           bash tools/build-linux-dev.sh \
