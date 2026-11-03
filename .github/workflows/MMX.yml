@@ -14,7 +14,7 @@ jobs:
       - name: Check out source and submodules
         uses: actions/checkout@v6
         with:
-          ref: sdl-opengles2
+          ref: main
           submodules: recursive
 
       - name: Install ARM64 build dependencies
@@ -71,25 +71,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          C_FLAGS="
-            -O3
-            -mcpu=cortex-a53
-            -flto
-            -ffast-math
-            -fno-math-errno
-          "
-
-          CXX_FLAGS="
-            -O3
-            -mcpu=cortex-a53
-            -flto
-            -ffast-math
-            -fno-math-errno
-          "
-
-          LINK_FLAGS="
-            -flto
-          "
+          # These environment variables are read by CMake on its first,
+          # clean configure. Keep them as single-line values.
+          export CFLAGS="-mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          export CXXFLAGS="-mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          export LDFLAGS="-flto"
 
           bash tools/build-linux-dev.sh \
             --rom "private-roms/Mega Man X (USA) (Rev 1).sfc" \
@@ -101,9 +87,7 @@ jobs:
             -DSNESRECOMP_SDL_GLES2_ONLY=ON \
             -DMMX_RASTER_IMPL=NATIVE \
             -DMMX_NATIVE_ROW_PLAN=ON \
-            "-DCMAKE_C_FLAGS_RELEASE=$C_FLAGS" \
-            "-DCMAKE_CXX_FLAGS_RELEASE=$CXX_FLAGS" \
-            "-DCMAKE_EXE_LINKER_FLAGS_RELEASE=$LINK_FLAGS" \
+            -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
 
       - name: Verify optimized binary
@@ -140,11 +124,16 @@ jobs:
               exit 1
             }
 
+          echo "=== Effective compiler flags ==="
+          grep -E '^CMAKE_(C|CXX)_FLAGS:STRING=' "$CACHE" || true
+          grep -E '^CMAKE_EXE_LINKER_FLAGS:STRING=' "$CACHE" || true
+
+          echo
           echo "=== Dynamic dependencies ==="
           readelf -d "$BIN" | grep NEEDED || true
 
           if readelf -d "$BIN" | grep -E \
-            '\(NEEDED\).*lib(OpenGL|GLX|GLU)\.so'; then
+            '\\(NEEDED\\).*lib(OpenGL|GLX|GLU)\\.so'; then
             echo "::error::Desktop OpenGL dependency detected"
             exit 1
           fi
