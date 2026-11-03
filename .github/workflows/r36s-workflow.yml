@@ -67,7 +67,7 @@ jobs:
 
           # Ubuntu 20.04 ships CMake 3.16.3; the project requires >= 3.20.
           # Install a known compatible CMake release for the ARM64 container.
-          python3 -m pip install --upgrade cmake==3.31.8
+          python3 -m pip install --upgrade cmake==3.31.10
           hash -r
           cmake --version
           cmake --version | grep -Eq 'cmake version 3\\.(2[0-9]|[3-9][0-9])'
