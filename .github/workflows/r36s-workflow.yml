@@ -200,7 +200,7 @@ jobs:
           cp controls/megamanx.gptk \
             package/ports/megamanx/megamanx.gptk
 
-          chmod +x package/megamanx/MegaManXSNESRecomp
+          chmod +x package/ports/megamanx/MegaManXSNESRecomp
 
       - name: Create PortMaster launcher
         run: |
