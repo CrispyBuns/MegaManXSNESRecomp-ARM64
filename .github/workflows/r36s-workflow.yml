@@ -56,8 +56,6 @@ jobs:
             pkg-config \
             curl \
             ca-certificates \
-            # SDL2 2.32.8 build dependencies: audio, device discovery,
-            # X11/Wayland window backends, and EGL/GLES2 support.
             libasound2-dev \
             libpulse-dev \
             libudev-dev \
