@@ -2,6 +2,15 @@ name: RG35XX-H A53 Optimized Binary
 
 on:
   workflow_dispatch:
+    inputs:
+      optimization_level:
+        description: "A53 optimization level"
+        required: true
+        type: choice
+        default: O3
+        options:
+          - O3
+          - O2
 
 permissions:
   contents: read
@@ -68,13 +77,20 @@ jobs:
 
       - name: Build optimized Cortex-A53 binary
         shell: bash
+        env:
+          OPT_LEVEL: ${{ inputs.optimization_level }}
         run: |
           set -euo pipefail
 
+          case "$OPT_LEVEL" in
+            O2|O3) ;;
+            *) echo "::error::Unsupported optimization level: $OPT_LEVEL"; exit 1 ;;
+          esac
+
           # These environment variables are read by CMake on its first,
           # clean configure. Keep them as single-line values.
-          export CFLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
-          export CXXFLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          export CFLAGS="-${OPT_LEVEL} -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno -fno-semantic-interposition -fomit-frame-pointer"
+          export CXXFLAGS="-${OPT_LEVEL} -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno -fno-semantic-interposition -fomit-frame-pointer"
           export LDFLAGS="-flto"
 
           bash tools/build-linux-dev.sh \
@@ -88,6 +104,7 @@ jobs:
             -DMMX_RASTER_IMPL=NATIVE \
             -DMMX_NATIVE_ROW_PLAN=ON \
             -DMMX_NATIVE_BG_SPANS=ON \
+            -DMMX_STAGE_TILE_REUSE=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
 
@@ -122,6 +139,20 @@ jobs:
             'MMX_NATIVE_ROW_PLAN:BOOL=ON' \
             "$CACHE" || {
               echo "::error::Native row planning was not enabled"
+              exit 1
+            }
+
+          grep -Fxq \
+            'MMX_NATIVE_BG_SPANS:BOOL=ON' \
+            "$CACHE" || {
+              echo "::error::Native background spans were not enabled"
+              exit 1
+            }
+
+          grep -Fxq \
+            'MMX_STAGE_TILE_REUSE:BOOL=ON' \
+            "$CACHE" || {
+              echo "::error::Stage tile reuse was not enabled"
               exit 1
             }
 
