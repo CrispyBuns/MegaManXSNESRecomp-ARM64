@@ -69,6 +69,7 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           uv python install 3.11
           uv venv --python 3.11 /opt/py311
+          export UV_LINK_MODE=copy
           uv pip install --python /opt/py311/bin/python \
             cmake==3.31.10 pillow
 
@@ -78,7 +79,7 @@ jobs:
           python3 --version
           python3 -c 'import sys; assert sys.version_info >= (3, 9)'
           cmake --version
-          cmake --version | grep -Eq '^cmake version 3\\.(2[0-9]|[3-9][0-9])'
+          cmake --version | grep -Eq '^cmake version 3\.(2[0-9]|[3-9][0-9])'
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
