@@ -34,46 +34,6 @@ jobs:
         with:
           submodules: recursive
 
-      # SDL_OpenURL was added in SDL 2.0.14; Ubuntu 20.04 ships SDL 2.0.10.
-      # Keep the launcher build compatible while disabling only its optional
-      # "Open folder" action on older SDL2 versions.
-      - name: Patch launcher for Ubuntu 20.04 SDL2 compatibility
-        run: |
-          set -e
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("recomp-ui/src/common/backends/imgui/launcher_imgui.cpp")
-          source = path.read_text()
-          old = """#if defined(LNG_SDL3)
-                                      const bool opened = SDL_OpenURL(url.c_str());
-          #else
-                                      const bool opened = SDL_OpenURL(url.c_str()) == 0;
-          #endif
-                                      if (!opened) {
-                                          error = SDL_GetError();
-                                          if (error.empty()) error = "The system folder opener failed.";
-                                      } else {"""
-          new = """#if defined(LNG_SDL3)
-                                      const bool opened = SDL_OpenURL(url.c_str());
-          #elif SDL_VERSION_ATLEAST(2, 0, 14)
-                                      const bool opened = SDL_OpenURL(url.c_str()) == 0;
-          #else
-                                      const bool opened = false;
-                                      error = "Opening folders requires SDL 2.0.14 or newer.";
-          #endif
-                                      if (!opened) {
-          #if defined(LNG_SDL3) || SDL_VERSION_ATLEAST(2, 0, 14)
-                                          error = SDL_GetError();
-                                          if (error.empty()) error = "The system folder opener failed.";
-          #endif
-                                      } else {"""
-          if old not in source:
-              raise SystemExit("Expected SDL_OpenURL block not found; refusing to patch unexpected source.")
-          path.write_text(source.replace(old, new, 1))
-          print("Applied SDL2 2.0.14 compatibility guard.")
-          PY
-
       - name: Verify Ubuntu 20.04 ARM64 build environment
         run: |
           set -e
@@ -120,6 +80,46 @@ jobs:
           python3 -c 'import sys; assert sys.version_info >= (3, 9)'
           cmake --version
           cmake --version | grep -Eq '^cmake version 3\.(2[0-9]|[3-9][0-9])'
+
+      # SDL_OpenURL was added in SDL 2.0.14; Ubuntu 20.04 ships SDL 2.0.10.
+      # Keep the launcher build compatible while disabling only its optional
+      # "Open folder" action on older SDL2 versions.
+      - name: Patch launcher for Ubuntu 20.04 SDL2 compatibility
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("recomp-ui/src/common/backends/imgui/launcher_imgui.cpp")
+          source = path.read_text()
+          old = """#if defined(LNG_SDL3)
+                                      const bool opened = SDL_OpenURL(url.c_str());
+          #else
+                                      const bool opened = SDL_OpenURL(url.c_str()) == 0;
+          #endif
+                                      if (!opened) {
+                                          error = SDL_GetError();
+                                          if (error.empty()) error = "The system folder opener failed.";
+                                      } else {"""
+          new = """#if defined(LNG_SDL3)
+                                      const bool opened = SDL_OpenURL(url.c_str());
+          #elif SDL_VERSION_ATLEAST(2, 0, 14)
+                                      const bool opened = SDL_OpenURL(url.c_str()) == 0;
+          #else
+                                      const bool opened = false;
+                                      error = "Opening folders requires SDL 2.0.14 or newer.";
+          #endif
+                                      if (!opened) {
+          #if defined(LNG_SDL3) || SDL_VERSION_ATLEAST(2, 0, 14)
+                                          error = SDL_GetError();
+                                          if (error.empty()) error = "The system folder opener failed.";
+          #endif
+                                      } else {"""
+          if old not in source:
+              raise SystemExit("Expected SDL_OpenURL block not found; refusing to patch unexpected source.")
+          path.write_text(source.replace(old, new, 1))
+          print("Applied SDL2 2.0.14 compatibility guard.")
+          PY
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
