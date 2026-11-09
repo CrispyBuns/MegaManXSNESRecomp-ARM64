@@ -192,14 +192,13 @@ jobs:
         run: |
           set -e
 
-          mkdir -p package/ports
-          mkdir -p package/megamanx
+          mkdir -p package/ports/megamanx
 
           cp build-r36s/MegaManXSNESRecomp \
-            package/megamanx/MegaManXSNESRecomp
+            package/ports/megamanx/MegaManXSNESRecomp
 
           cp controls/megamanx.gptk \
-            package/megamanx/megamanx.gptk
+            package/ports/megamanx/megamanx.gptk
 
           chmod +x package/megamanx/MegaManXSNESRecomp
 
@@ -233,7 +232,7 @@ jobs:
 
           zip -r ../MegaManX-R36S-DARKOSRE-PortMaster.zip \
             ports/megamanx.sh \
-            megamanx/
+            ports/megamanx/
 
       - name: Verify no standalone SNES ROM is included
         run: |
