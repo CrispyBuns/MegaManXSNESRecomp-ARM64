@@ -3,6 +3,15 @@ name: Mega Man X - R36S-DARKOSRE PortMaster Auto Install
 
 on:
   workflow_dispatch:
+    inputs:
+      optimization_level:
+        description: "A53 optimization level (compare O2 and O3 on the handheld)"
+        required: true
+        type: choice
+        default: O3
+        options:
+          - O3
+          - O2
 
 permissions:
   contents: read
@@ -147,11 +156,18 @@ jobs:
           }
 
       - name: Build A53 optimized GLES2 executable
+        env:
+          OPT_LEVEL: ${{ inputs.optimization_level }}
         run: |
           set -e
 
-          export CFLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
-          export CXXFLAGS="-O3 -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno"
+          case "$OPT_LEVEL" in
+            O2|O3) ;;
+            *) echo "Unsupported optimization level: $OPT_LEVEL"; exit 1 ;;
+          esac
+
+          export CFLAGS="-${OPT_LEVEL} -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno -fno-semantic-interposition -fomit-frame-pointer"
+          export CXXFLAGS="-${OPT_LEVEL} -mcpu=cortex-a53 -flto -ffast-math -fno-math-errno -fno-semantic-interposition -fomit-frame-pointer"
           export LDFLAGS="-flto"
 
           bash tools/build-linux-dev.sh \
@@ -164,8 +180,21 @@ jobs:
             -DSNESRECOMP_SDL_GLES2_ONLY=ON \
             -DMMX_RASTER_IMPL=NATIVE \
             -DMMX_NATIVE_ROW_PLAN=ON \
+            -DMMX_NATIVE_BG_SPANS=ON \
+            -DMMX_STAGE_TILE_REUSE=ON \
+            -DBUILD_TESTING=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
+
+      - name: Test native A53 renderer optimizations
+        run: |
+          set -e
+          cmake --build build-r36s \
+            --target mmx_renderer_native_test mmx_row_plan_test \
+            --parallel 4
+          ctest --test-dir build-r36s \
+            -R 'mmx_custom_renderer_native|mmx_custom_renderer_row_plan' \
+            --output-on-failure
 
       - name: Verify executable
         run: |
