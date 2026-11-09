@@ -208,7 +208,7 @@ jobs:
             exit 1
           fi
 
-          if grep -E 'libSDL2(-2\\.0)?\\.so' dependencies.txt; then
+          if grep -E 'libSDL2(-2\.0)?\.so' dependencies.txt; then
             echo "SDL2 was dynamically linked; expected the static SDL2 archive."
             exit 1
           fi
