@@ -56,7 +56,7 @@ jobs:
             pkg-config \
             curl \
             ca-certificates \
-            libsdl2-dev \
+            libasound2-dev \
             libegl1-mesa-dev \
             libgles2-mesa-dev \
             binutils \
@@ -80,6 +80,29 @@ jobs:
           python3 -c 'import sys; assert sys.version_info >= (3, 9)'
           cmake --version
           cmake --version | grep -Eq '^cmake version 3\.(2[0-9]|[3-9][0-9])'
+
+      # Build SDL2 2.32.8 as a static library. This embeds SDL2 in the
+      # game executable, avoiding the old Ubuntu 20.04 SDL2 runtime dependency.
+      - name: Build and install static SDL2
+        run: |
+          set -e
+          git clone --depth 1 --branch release-2.32.8 \
+            https://github.com/libsdl-org/SDL.git sdl2-src
+          cmake -S sdl2-src -B sdl2-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/opt/sdl2-static \
+            -DSDL_SHARED=OFF \
+            -DSDL_STATIC=ON \
+            -DSDL_TEST=OFF \
+            -DSDL_TESTS=OFF \
+            -DSDL_INSTALL=ON
+          cmake --build sdl2-build --parallel 4
+          cmake --install sdl2-build
+          test -f /opt/sdl2-static/include/SDL2/SDL.h
+          find /opt/sdl2-static -name 'libSDL2.a' -print -quit | grep -q .
+          echo "CMAKE_PREFIX_PATH=/opt/sdl2-static" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=/opt/sdl2-static/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "SDL2 static library installed."
 
       # SDL_OpenURL was added in SDL 2.0.14; Ubuntu 20.04 ships SDL 2.0.10.
       # Keep the launcher build compatible while disabling only its optional
@@ -184,6 +207,13 @@ jobs:
             echo "Unexpected desktop OpenGL dependency."
             exit 1
           fi
+
+          if grep -E 'libSDL2(-2\\.0)?\\.so' dependencies.txt; then
+            echo "SDL2 was dynamically linked; expected the static SDL2 archive."
+            exit 1
+          fi
+
+          echo "Verified SDL2 is statically linked into the executable."
 
       - name: Prepare PortMaster package
         run: |
