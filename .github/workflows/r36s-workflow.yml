@@ -244,6 +244,10 @@ jobs:
 
           export LD_LIBRARY_PATH="$GAMEDIR/libs:$LD_LIBRARY_PATH"
 
+          # Replay capture hashes and records frames in the background. Keep it
+          # off by default on low-power handhelds; set MMX_REPLAY_RECORD=1 to opt in.
+          export MMX_REPLAY_RECORD="${MMX_REPLAY_RECORD:-0}"
+
           get_controls
 
           ./MegaManXSNESRecomp
